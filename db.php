@@ -1,15 +1,14 @@
 <?php
-// ดึงค่าคอนฟิกจาก Railway
-$host     = getenv('MYSQLHOST')     ?: 'localhost';
-$user     = getenv('MYSQLUSER')     ?: 'root';
-$password = getenv('MYSQLPASSWORD') ?: '';
-$dbname   = getenv('MYSQLDATABASE') ?: 'activity_app';
-$port     = getenv('MYSQLPORT')     ?: 3306;
+// ดึงค่าการเชื่อมต่อจาก Environment Variables ของ Railway
+$host     = getenv('MYSQLHOST')     ?: getenv('MYSQL_HOST')     ?: 'localhost';
+$user     = getenv('MYSQLUSER')     ?: getenv('MYSQL_USER')     ?: 'root';
+$password = getenv('MYSQLPASSWORD') ?: getenv('MYSQL_PASSWORD') ?: '';
+$dbname   = getenv('MYSQLDATABASE') ?: getenv('MYSQL_DATABASE') ?: 'activity_app';
+$port     = getenv('MYSQLPORT')     ?: getenv('MYSQL_PORT')     ?: 3306;
 
-// สร้างการเชื่อมต่อพร้อมระบุ Port
+// เชื่อมต่อฐานข้อมูล
 $conn = new mysqli($host, $user, $password, $dbname, (int)$port);
 
-// ตรวจสอบการเชื่อมต่อ
 if ($conn->connect_error) {
     die("Database Connection Failed: " . $conn->connect_error);
 }
