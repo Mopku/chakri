@@ -1,4 +1,4 @@
 <?php
-header("Location: login.php");
+header("Location: schedule_landing.php");
 exit();
 ?>
