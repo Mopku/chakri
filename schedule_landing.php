@@ -2,7 +2,7 @@
 session_start();
 require_once 'db.php';
 
-// ตรวจสอบว่าผู้ใช้ล็อกอินในฐานะนักศึกษาหรือไม่
+// ตรวจสอบสถานะการล็อกอิน
 $is_logged_in = isset($_SESSION['user_id']) && $_SESSION['role'] === 'student';
 $total_hours = 0;
 $student_name = '';
@@ -22,7 +22,7 @@ if ($is_logged_in) {
     $stmt->execute();
     $total_hours = $stmt->get_result()->fetch_assoc()['total_hours'] ?? 0;
 
-    // 2. ดึงประวัติกิจกรรมที่สะสมชั่วโมงสำเร็จแล้ว 3 รายการล่าสุด
+    // 2. ดึงประวัติกิจกรรม 3 รายการล่าสุด
     $history_sql = "SELECT a.title, a.hours, att.checked_in_at 
                     FROM attendance att 
                     JOIN activities a ON att.activity_id = a.id 
@@ -34,7 +34,7 @@ if ($is_logged_in) {
     $history_result = $stmt_hist->get_result();
 }
 
-// 3. จัดการเมื่อกดส่งข้อร้องเรียน
+// 3. จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
 $complaint_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) {
     if ($is_logged_in) {
@@ -50,6 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                 $complaint_msg = '<div class="alert alert-danger mt-2">เกิดข้อผิดพลาด ไม่สามารถส่งข้อมูลได้</div>';
             }
         }
+    } else {
+        header("Location: login.php");
+        exit();
     }
 }
 ?>
@@ -96,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
 <div class="container px-3">
 
-    <!-- แสดงชั่วโมงสะสม -->
+    <!-- ส่วนที่ 1: แสดงสถานะผู้ใช้ / ชั่วโมงสะสม -->
     <?php if ($is_logged_in): ?>
         <div class="card card-custom bg-primary text-white mb-4 p-3 shadow-sm">
             <div class="d-flex align-items-center justify-content-between">
@@ -116,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                 <ul class="list-unstyled mb-0 small">
                     <?php while ($row = $history_result->fetch_assoc()): ?>
                         <li class="d-flex justify-content-between">
-                            <span>• <?= htmlspecialchars($row['title']) ?></span>
+                            <span><?= htmlspecialchars($row['title']) ?></span>
                             <span class="badge bg-warning text-dark">+<?= $row['hours'] ?> ชม.</span>
                         </li>
                     <?php endwhile; ?>
@@ -134,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <!-- ข้อความแจ้งเตือนเมื่อส่งข้อร้องเรียนสำเร็จ -->
     <?= $complaint_msg ?>
 
-    <!-- ตารางการแข่งขันประจำวัน -->
+    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน (ดูสถานะ LIVE ได้ทุกคน) -->
     <div class="card card-custom mb-4">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางแข่งขันวันนี้</h6>
@@ -193,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     </div>
 
-    <!-- ปุ่ม Action -->
+    <!-- ส่วนที่ 3: ปุ่มกดดูประวัติ และ ปุ่มแจ้งปัญหา/ร้องเรียน -->
     <div class="d-grid gap-2 mb-4">
         <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
             <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
@@ -204,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
         <?php else: ?>
-            <button class="btn btn-outline-secondary btn-lg rounded-pill shadow-sm" onclick="alert('กรุณาเข้าสู่ระบบก่อนส่งข้อร้องเรียน'); window.location='login.php';">
+            <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" onclick="if(confirm('กรุณาเข้าสู่ระบบก่อนส่งข้อร้องเรียน/แจ้งปัญหา กด OK เพื่อไปหน้าล็อกอิน')) { window.location='login.php'; }">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
         <?php endif; ?>
@@ -212,7 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
 </div>
 
-<!-- Modal ฟอร์มเขียนข้อร้องเรียน -->
+<!-- Modal ฟอร์มเขียนข้อร้องเรียน/แจ้งเหตุผล -->
 <div class="modal fade" id="complaintModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -245,7 +248,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     </div>
 </div>
 
-<!-- สคริปต์ Bootstrap JS สั่งให้ Modal และส่วนโต้ตอบทำงาน -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

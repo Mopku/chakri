@@ -2,21 +2,17 @@
 session_start();
 require_once 'db.php';
 
-// ตรวจสอบว่าล็อกอินหรือยัง ถ้ายังไม่ได้ล็อกอิน ให้ไปหน้า login ก่อน
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit;
-}
-
-$user_id  = $_SESSION['user_id'];
 $qr_token = trim($_GET['token'] ?? '');
 
-if (empty($qr_token)) {
-    echo "<script>alert('รหัส QR Code ไม่ถูกต้อง'); window.location='schedule_landing.php';</script>";
-    exit;
+// 1. ถ้าไม่ได้ล็อกอิน หรือไม่มี Token ให้เด้งไปหน้า schedule_landing.php ทันที (ให้ดูตารางแข่ง/ไลฟ์ได้)
+if (!isset($_SESSION['user_id']) || empty($qr_token)) {
+    header("Location: schedule_landing.php");
+    exit();
 }
 
-// ค้นหากิจกรรม
+$user_id = $_SESSION['user_id'];
+
+// 2. ถ้าล็อกอินแล้ว ค้นหากิจกรรมเพื่อบันทึกเช็กชื่อ
 $stmt = $conn->prepare("SELECT id, title, hours FROM activities WHERE qr_token = ?");
 $stmt->bind_param("s", $qr_token);
 $stmt->execute();
@@ -24,12 +20,12 @@ $activity = $stmt->get_result()->fetch_assoc();
 
 if (!$activity) {
     echo "<script>alert('ไม่พบกิจกรรมนี้ในระบบ'); window.location='schedule_landing.php';</script>";
-    exit;
+    exit();
 }
 
 $activity_id = $activity['id'];
 
-// ตรวจสอบการเช็กชื่อซ้ำ
+// 3. ตรวจสอบการเช็กชื่อซ้ำ
 $check_stmt = $conn->prepare("SELECT id, status FROM attendance WHERE user_id = ? AND activity_id = ?");
 $check_stmt->bind_param("ii", $user_id, $activity_id);
 $check_stmt->execute();
