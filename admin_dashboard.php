@@ -86,7 +86,7 @@ $complaints = $conn->query("
     <div class="container">
         <a class="navbar-brand fw-bold" href="#"><i class="bi bi-shield-lock-fill"></i> ระบบจัดการสำหรับแอดมิน</a>
         <div class="d-flex align-items-center gap-3">
-            <span class="text-white small">ผู้ดูแลระบบ: <?= htmlspecialchars($_SESSION['fullname']) ?></span>
+            <span class="text-white small">ผู้ดูแลระบบ: <?= htmlspecialchars($_SESSION['fullname'] ?? 'Admin') ?></span>
             <a href="logout.php" class="btn btn-outline-light btn-sm">ออกจากระบบ</a>
         </div>
     </div>
@@ -186,9 +186,9 @@ $complaints = $conn->query("
                         <?php if ($activities && $activities->num_rows > 0): ?>
                             <?php while ($act = $activities->fetch_assoc()): ?>
                                 <?php
-                                    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                                    $app_path = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
-                                    $checkin_url = $scheme . '://' . $_SERVER['HTTP_HOST'] . $app_path . '/checkin_direct.php?token=' . rawurlencode($act['qr_token']);
+                                    // กำหนด URL ของ Railway เป็นค่าหลัก
+                                    $base_domain = 'https://chakri-production.up.railway.app';
+                                    $checkin_url = $base_domain . '/checkin_direct.php?token=' . rawurlencode($act['qr_token']);
                                     $qr_api_url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($checkin_url);
                                 ?>
                                 <tr>
