@@ -34,7 +34,18 @@ if ($is_logged_in) {
     $history_result = $stmt_hist->get_result();
 }
 
-// 3. จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
+// 3. ดึงเฉพาะ "รายการแข่งขันกีฬาล่าสุด" ที่แอดมินสร้างขึ้น (ดึงรายการล่าสุดมาแสดง)
+$latest_matches = $conn->query("
+    SELECT m.*, 
+           t1.team_name AS team1_name, t1.team_color AS team1_color,
+           t2.team_name AS team2_name, t2.team_color AS team2_color
+    FROM matches m
+    JOIN teams t1 ON m.team1_id = t1.id
+    JOIN teams t2 ON m.team2_id = t2.id
+    ORDER BY m.created_at DESC, m.id DESC
+");
+
+// 4. จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
 $complaint_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) {
     if ($is_logged_in) {
@@ -134,91 +145,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     <?php endif; ?>
 
-    <!-- ข้อความแจ้งเตือนเมื่อส่งข้อร้องเรียนสำเร็จ -->
     <?= $complaint_msg ?>
 
-    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน -->
+    <!-- ส่วนที่ 2: ตารางการแข่งขันล่าสุดที่แอดมินสร้างขึ้น -->
     <div class="card card-custom mb-4">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางแข่งขันวันนี้</h6>
+            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาล่าสุด</h6>
             <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE</span>
         </div>
         <div class="card-body p-2">
             
-            <!-- Item 1: กำลังแข่ง -->
-            <div class="p-3 border-bottom">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <small class="text-muted"><i class="bi bi-clock"></i> 10:00 - 11:30 น. (รอบรองฯ)</small>
-                    <span class="badge bg-warning text-dark badge-status">กำลังแข่งขัน</span>
-                </div>
-                <div class="row text-center fw-bold align-items-center my-2">
-                    <div class="col-5 text-end text-primary">สาขาเทคโนโลยีฯ</div>
-                    <div class="col-2 text-muted fs-6">VS</div>
-                    <div class="col-5 text-start text-danger">สาขาบริหารธุรกิจ</div>
-                </div>
-                <div class="text-center">
-                    <small class="text-muted bg-light px-2 py-1 rounded">สนาม 1 (คอร์ท A)</small>
-                </div>
-            </div>
-
-            <!-- Item 2: คู่ถัดไป -->
-            <div class="p-3 border-bottom">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <small class="text-muted"><i class="bi bi-clock"></i> 13:00 - 14:30 น. (รอบชิงฯ)</small>
-                    <span class="badge bg-secondary badge-status">รอดำเนินการ</span>
-                </div>
-                <div class="row text-center fw-bold align-items-center my-2">
-                    <div class="col-5 text-end">ผู้ชนะคู่ที่ 1</div>
-                    <div class="col-2 text-muted fs-6">VS</div>
-                    <div class="col-5 text-start">ผู้ชนะคู่ที่ 2</div>
-                </div>
-                <div class="text-center">
-                    <small class="text-muted bg-light px-2 py-1 rounded">สนามกลาง</small>
-                </div>
-            </div>
-
-            <!-- Item 3: จบแล้ว -->
-            <div class="p-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <small class="text-muted"><i class="bi bi-clock"></i> 08:30 - 09:30 น.</small>
-                    <span class="badge bg-success badge-status">แข่งเสร็จแล้ว</span>
-                </div>
-                <div class="row text-center fw-bold align-items-center my-2">
-                    <div class="col-5 text-end text-success">สาขาวิศวกรรมฯ (2)</div>
-                    <div class="col-2 text-muted fs-6">:</div>
-                    <div class="col-5 text-start text-muted">สาขานิเทศศาสตร์ (0)</div>
-                </div>
-                <div class="text-center">
-                    <small class="text-muted bg-light px-2 py-1 rounded">สนาม 2</small>
-                </div>
-            </div>
+            <?php if ($latest_matches && $latest_matches->num_rows > 0): ?>
+                <?php while ($mc = $latest_matches->fetch_assoc()): ?>
+                    <div class="p-3 border-bottom">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-primary fw-bold">
+                                <i class="bi bi-trophy me-1"></i><?= htmlspecialchars($mc['sport_name']) ?>
+                                <span class="text-muted opacity-75 font-normal ms-1">(<?= htmlspecialchars($mc['match_time']) ?>)</span>
+                            </small>
+                            <?php if ($mc['status'] === 'live'): ?>
+                                <span class="badge bg-danger badge-status"><i class="bi bi-record-fill"></i> กำลังแข่งขัน</span>
+                            <?php elseif ($mc['status'] === 'finished'): ?>
+                                <span class="badge bg-success badge-status">แข่งเสร็จแล้ว</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary badge-status">รอดำเนินการ</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="row text-center fw-bold align-items-center my-2">
+                            <div class="col-5 text-end text-primary">
+                                <?= htmlspecialchars($mc['team1_name']) ?>
+                                <small class="d-block text-muted opacity-75 fw-normal" style="font-size: 0.75rem;"><?= htmlspecialchars($mc['team1_color']) ?></small>
+                            </div>
+                            <div class="col-2 text-muted fs-6">VS</div>
+                            <div class="col-5 text-start text-danger">
+                                <?= htmlspecialchars($mc['team2_name']) ?>
+                                <small class="d-block text-muted opacity-75 fw-normal" style="font-size: 0.75rem;"><?= htmlspecialchars($mc['team2_color']) ?></small>
+                            </div>
+                        </div>
+                        <div class="text-center">
+                            <small class="text-muted bg-light px-2 py-1 rounded"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small>
+                        </div>
+                    </div>
+                <?php endwhile; ?>
+            <?php else: ?>
+                <div class="p-4 text-center text-muted">ยังไม่มีรายการแข่งขันล่าสุดในขณะนี้</div>
+            <?php endif; ?>
 
         </div>
     </div>
 
     <!-- ส่วนที่ 3: ปุ่มกด Action ต่างๆ -->
     <div class="d-grid gap-2 mb-4">
-        
-        <!-- เพิ่มปุ่มสำหรับกดไปสร้างทีม / จัดการทีมกีฬา -->
         <?php if ($is_logged_in): ?>
             <a href="team.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
                 <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
             </a>
-        <?php else: ?>
-            <a href="login.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
-                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
+            <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
+                <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
             </a>
-        <?php endif; ?>
-
-        <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
-            <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
-        </a>
-
-        <?php if ($is_logged_in): ?>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" data-bs-toggle="modal" data-bs-target="#complaintModal">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
         <?php else: ?>
+            <a href="login.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
+                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
+            </a>
+            <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
+                <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
+            </a>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" onclick="if(confirm('กรุณาเข้าสู่ระบบก่อนส่งข้อร้องเรียน/แจ้งปัญหา กด OK เพื่อไปหน้าล็อกอิน')) { window.location='login.php'; }">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
