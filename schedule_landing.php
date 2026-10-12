@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <p class="mb-0 opacity-75 small"><i class="bi bi-geo-alt-fill"></i> อาคารศูนย์กีฬา มหาวิทยาลัย</p>
 </div>
 
-<div class="container px-3">
+<div class="container px-3" style="max-width: 900px;">
 
     <!-- ส่วนที่ 1: แสดงสถานะผู้ใช้ / ชั่วโมงสะสม -->
     <?php if ($is_logged_in): ?>
@@ -140,14 +140,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <?php else: ?>
         <div class="card card-custom bg-warning bg-opacity-10 border-warning mb-4 p-3 text-center">
             <h6 class="fw-bold text-dark mb-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> ยังไม่ได้เข้าสู่ระบบ</h6>
-            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อบันทึก สร้างทีม และดูชั่วโมงกิจกรรมสะสมของคุณ</p>
+            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อดูข้อมูลชั่วโมงกิจกรรมสะสมของคุณ</p>
             <a href="login.php" class="btn btn-warning btn-sm fw-bold">เข้าสู่ระบบ / สมัครสมาชิก</a>
         </div>
     <?php endif; ?>
 
     <?= $complaint_msg ?>
 
-    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน (ดึงรายการที่แอดมินสร้าง) -->
+    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน -->
     <div class="card card-custom mb-4" id="match-schedule">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางการแข่งขันกีฬาประจำวัน</h6>
@@ -194,29 +194,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: ปุ่มกด Action ต่างๆ (เปลี่ยนปุ่มเอาคิวอาร์ออก เป็นปุ่มดูตารางการแข่งขัน) -->
+    <!-- ส่วนที่ 3: ปุ่มกด Action (เอาปุ่มจัดการทีม/สร้างทีมออกแล้ว) -->
     <div class="d-grid gap-2 mb-4">
-        <!-- ปุ่มกดดูตารางการแข่งขัน (เลื่อนไปยังการ์ดตารางแข่งขัน) -->
-        <a href="#match-schedule" class="btn btn-success btn-lg rounded-pill shadow-sm fw-bold">
-            <i class="bi bi-calendar-check-fill me-1"></i> ดูตารางการแข่งขันทั้งหมด
-        </a>
-
         <?php if ($is_logged_in): ?>
-            <a href="team.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
-                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
-            </a>
-            <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
+            <a href="student_dashboard.php" class="btn btn-primary btn-lg rounded-pill shadow-sm fw-bold">
                 <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
             </a>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" data-bs-toggle="modal" data-bs-target="#complaintModal">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
         <?php else: ?>
-            <a href="login.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
-                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
-            </a>
-            <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
-                <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
+            <a href="login.php" class="btn btn-primary btn-lg rounded-pill shadow-sm fw-bold">
+                <i class="bi bi-person-badge-fill me-1"></i> เข้าสู่ระบบเพื่อดูประวัติชั่วโมงสะสม
             </a>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" onclick="if(confirm('กรุณาเข้าสู่ระบบก่อนส่งข้อร้องเรียน/แจ้งปัญหา กด OK เพื่อไปหน้าล็อกอิน')) { window.location='login.php'; }">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
