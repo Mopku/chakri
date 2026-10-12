@@ -22,7 +22,21 @@ $pending_invites = $conn->query("
 ");
 $pending_count = $pending_invites ? $pending_invites->num_rows : 0;
 
-// คำนวณชั่วโมงสะสมรวม
+// 2. ดึงข้อมูลทีมที่ผู้ใช้เป็นสมาชิกอยู่ (Accepted Team)
+$my_team = null;
+$team_stmt = $conn->prepare("
+    SELECT t.*, u.fullname AS leader_name,
+           (SELECT COUNT(*) FROM team_members WHERE team_id = t.id AND status = 'accepted') AS member_count
+    FROM teams t
+    JOIN team_members tm ON t.id = tm.team_id
+    JOIN users u ON t.leader_id = u.id
+    WHERE tm.user_id = ? AND tm.status = 'accepted' LIMIT 1
+");
+$team_stmt->bind_param("i", $user_id);
+$team_stmt->execute();
+$my_team = $team_stmt->get_result()->fetch_assoc();
+
+// 3. คำนวณชั่วโมงสะสมรวม
 $sum_sql = "SELECT SUM(a.hours) AS total_hours 
             FROM attendance att 
             JOIN activities a ON att.activity_id = a.id 
@@ -32,7 +46,7 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $total_hours = $stmt->get_result()->fetch_assoc()['total_hours'] ?? 0;
 
-// ดึงประวัติกิจกรรมทั้งหมด
+// 4. ดึงประวัติกิจกรรมทั้งหมด
 $history_sql = "SELECT a.title, a.hours, att.checked_in_at, att.summary_text, att.score 
                 FROM attendance att 
                 JOIN activities a ON att.activity_id = a.id 
@@ -54,6 +68,12 @@ $history_result = $stmt_hist->get_result();
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
         body { background-color: #f8f9fa; }
+        .card-team {
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #ffffff, #f1f5f9);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
     </style>
 </head>
 <body>
@@ -70,7 +90,7 @@ $history_result = $stmt_hist->get_result();
 
 <div class="container my-4" style="max-width: 900px;">
 
-    <!-- 🔔 การแจ้งเตือนคำเชิญเข้าทีม (จะเด้งขึ้นมาเมื่อมีเพื่อนส่งคำเชิญมา) -->
+    <!-- 🔔 การแจ้งเตือนคำเชิญเข้าทีม -->
     <?php if ($pending_count > 0): ?>
         <div class="card border-warning bg-warning bg-opacity-10 mb-4 shadow-sm border-2">
             <div class="card-body d-flex justify-content-between align-items-center">
@@ -87,7 +107,44 @@ $history_result = $stmt_hist->get_result();
         </div>
     <?php endif; ?>
 
-    <!-- การ์ดแสดงชั่วโมงรวม -->
+    <!-- 🛡️ การ์ดแสดงทีมกีฬาที่เราสังกัดอยู่ -->
+    <div class="card card-team p-3 mb-4 border border-secondary border-opacity-25">
+        <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-3">
+                <?php if ($my_team && !empty($my_team['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($my_team['logo_url']) ?>" class="rounded-circle border" style="width: 60px; height: 60px; object-fit: cover;">
+                <?php else: ?>
+                    <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 60px; height: 60px; font-size: 1.5rem;">
+                        <i class="bi bi-shield-fill"></i>
+                    </div>
+                <?php endif; ?>
+
+                <div>
+                    <?php if ($my_team): ?>
+                        <span class="badge bg-info text-dark mb-1"><?= htmlspecialchars($my_team['team_color']) ?></span>
+                        <h5 class="fw-bold mb-0 text-dark"><?= htmlspecialchars($my_team['team_name']) ?></h5>
+                        <small class="text-muted">หัวหน้าทีม: <?= htmlspecialchars($my_team['leader_name']) ?> | สมาชิก: <?= $my_team['member_count'] ?> คน</small>
+                    <?php else: ?>
+                        <h6 class="fw-bold text-secondary mb-1">คุณยังไม่มีทีมกีฬา</h6>
+                        <small class="text-muted">กดปุ่มสร้างทีมเพื่อลงทะเบียนแข่งขัน หรือรอเพื่อนส่งคำเชิญ</small>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div>
+                <a href="team.php" class="btn btn-warning fw-bold text-dark rounded-pill px-3 shadow-sm position-relative">
+                    <i class="bi bi-people-fill me-1"></i> <?= $my_team ? 'ดู/จัดการทีมของคุณ' : 'สร้างทีมกีฬา' ?>
+                    <?php if ($pending_count > 0): ?>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                            <?= $pending_count ?>
+                        </span>
+                    <?php endif; ?>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🏆 การ์ดแสดงชั่วโมงรวม -->
     <div class="card bg-primary text-white p-4 rounded-4 shadow-sm border-0 mb-4">
         <div class="d-flex justify-content-between align-items-center">
             <div>
@@ -101,24 +158,14 @@ $history_result = $stmt_hist->get_result();
         </div>
     </div>
 
-    <!-- ปุ่มการทำงานหลัก -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <!-- ปุ่มย้อนกลับไปหน้าตารางแข่งขัน -->
+    <div class="d-flex justify-content-start mb-3">
         <a href="schedule_landing.php" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> ดูตารางแข่งขัน
-        </a>
-        
-        <!-- ปุ่มกดไปจัดการทีมกีฬา (ติด Badge ตัวเลขแจ้งเตือนถ้ามีคำเชิญ) -->
-        <a href="team.php" class="btn btn-warning fw-bold text-dark shadow-sm rounded-pill px-4 position-relative">
-            <i class="bi bi-people-fill me-1"></i> สร้างทีมกีฬา / ชวนเพื่อนเข้าทีม
-            <?php if ($pending_count > 0): ?>
-                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                    <?= $pending_count ?>
-                </span>
-            <?php endif; ?>
+            <i class="bi bi-arrow-left me-1"></i> ดูตารางแข่งขัน & LIVE
         </a>
     </div>
 
-    <!-- ตารางประวัติกิจกรรม -->
+    <!-- 📋 ตารางประวัติกิจกรรม -->
     <div class="card shadow-sm border-0 rounded-3">
         <div class="card-header bg-white py-3 fw-bold">
             <i class="bi bi-clock-history me-2"></i> ประวัติการเข้าร่วมกิจกรรม & คะแนนสรุปผล
