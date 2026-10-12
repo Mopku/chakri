@@ -43,10 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance']))
     }
 }
 
-// ดึงข้อมูลนักศึกษาทั้งหมด (สำหรับดร็อปดาวน์เลือกนักศึกษา)
+// ดึงข้อมูลนักศึกษาทั้งหมด
 $students_list = $conn->query("SELECT id, fullname, student_id FROM users WHERE role = 'student' ORDER BY fullname ASC");
 
-// ดึงข้อมูลกิจกรรมทั้งหมด (สำหรับดร็อปดาวน์เลือกกิจกรรม)
+// ดึงข้อมูลกิจกรรมทั้งหมด
 $activities_list = $conn->query("SELECT id, title FROM activities ORDER BY title ASC");
 
 // ดึงข้อมูลกิจกรรมทั้งหมดสำหรับตารางและ QR Code
@@ -62,7 +62,7 @@ $attendances = $conn->query("
     ORDER BY att.checked_in_at DESC
 ");
 
-// ดึงรายการข้อร้องเรียน
+// ดึงรายการข้อร้องเรียน/แจ้งปัญหาจากนักศึกษา
 $complaints = $conn->query("
     SELECT c.*, u.fullname, u.student_id 
     FROM complaints c 
@@ -100,7 +100,6 @@ $complaints = $conn->query("
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0 fw-bold"><i class="bi bi-person-check-fill me-2"></i> จัดการคะแนน & เวลาเข้าร่วมกิจกรรม</h5>
-            <!-- ปุ่มเปิด Modal เพิ่มรายการใหม่ -->
             <button class="btn btn-light btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addAttendanceModal">
                 <i class="bi bi-plus-circle-fill text-primary"></i> เพิ่มเข้าร่วมกิจกรรมใหม่
             </button>
@@ -158,7 +157,7 @@ $complaints = $conn->query("
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีรายการเข้าร่วมกิจกรรม (กดปุ่ม "เพิ่มเข้าร่วมกิจกรรมใหม่" ด้านบนเพื่อเริ่มบันทึก)</td></tr>
+                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีรายการเข้าร่วมกิจกรรม</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -166,7 +165,7 @@ $complaints = $conn->query("
         </div>
     </div>
 
-    <!-- ส่วนรายการกิจกรรมทั้งหมด + ปุ่มแสดง QR Code -->
+    <!-- ส่วนที่ 2: รายการกิจกรรมทั้งหมด + ปุ่มแสดง QR Code -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-secondary text-white fw-bold">
             <h5 class="card-title mb-0 fs-6"><i class="bi bi-qr-code-scan me-2"></i> รายการกิจกรรม &amp; สแกนรับ QR Code</h5>
@@ -186,7 +185,6 @@ $complaints = $conn->query("
                         <?php if ($activities && $activities->num_rows > 0): ?>
                             <?php while ($act = $activities->fetch_assoc()): ?>
                                 <?php
-                                    // กำหนด URL ของ Railway เป็นค่าหลัก
                                     $base_domain = 'https://chakri-production.up.railway.app';
                                     $checkin_url = $base_domain . '/checkin_direct.php?token=' . rawurlencode($act['qr_token']);
                                     $qr_api_url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($checkin_url);
@@ -223,6 +221,53 @@ $complaints = $conn->query("
                             <?php endwhile; ?>
                         <?php else: ?>
                             <tr><td colspan="4" class="text-center py-4 text-muted">ยังไม่มีกิจกรรม</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ส่วนที่ 3: ตารางรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0 fs-6"><i class="bi bi-chat-square-text-fill me-2"></i> รายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา</h5>
+            <span class="badge bg-light text-danger fw-bold"><?= $complaints ? $complaints->num_rows : 0 ?> รายการ</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 20%;">นักศึกษา</th>
+                            <th style="width: 20%;">หัวข้อเรื่อง</th>
+                            <th style="width: 42%;">รายละเอียด / ข้อความ</th>
+                            <th style="width: 18%;">วันที่แจ้ง</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($complaints && $complaints->num_rows > 0): ?>
+                            <?php while ($cp = $complaints->fetch_assoc()): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= htmlspecialchars($cp['fullname']) ?></strong>
+                                        <br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span>
+                                    </td>
+                                    <td>
+                                        <div class="p-2 bg-light rounded text-dark border">
+                                            <?= nl2br(htmlspecialchars($cp['message'])) ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted"><i class="bi bi-clock"></i> <?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="4" class="text-center py-4 text-muted">ยังไม่มีข้อร้องเรียน หรือ รายการแจ้งปัญหาในขณะนี้</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
