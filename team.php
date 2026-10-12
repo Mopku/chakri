@@ -14,7 +14,7 @@ $message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
     $team_color = trim($_POST['team_color']);
-    $logo_url   = trim($_POST['logo_url']); // ลิงก์ URL รูปโลโก้ หรือใส่เป็นอัปโหลดรูปเพิ่มเติมได้
+    $logo_url   = trim($_POST['logo_url']); // ลิงก์ URL รูปโลโก้
 
     if (!empty($team_name) && !empty($team_color)) {
         // สร้างทีมใหม่
@@ -48,9 +48,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['invite_student'])) {
             $stmt_inv = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'pending')");
             $stmt_inv->bind_param("ii", $my_team_id, $invited_user_id);
             $stmt_inv->execute();
-            $message = '<div class="alert alert-success">ส่งคำเชิญเข้าร่วมทีมเรียบร้อยแล้ว!</div>';
+            $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> ส่งคำเชิญเข้าร่วมทีมเรียบร้อยแล้ว! เพื่อนสามารถกดตอบรับในระบบได้ทันที</div>';
         } else {
-            $message = '<div class="alert alert-warning">นักศึกษาคนนี้อยู่ในทีมหรือถูกเชิญไปแล้ว</div>';
+            $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> นักศึกษาคนนี้อยู่ในทีมหรือถูกเชิญไปแล้ว</div>';
         }
     }
 }
@@ -63,7 +63,9 @@ if (isset($_GET['action']) && isset($_GET['member_id'])) {
     $stmt_act = $conn->prepare("UPDATE team_members SET status = ? WHERE id = ? AND user_id = ?");
     $stmt_act->bind_param("sii", $action, $member_id, $user_id);
     $stmt_act->execute();
-    header("Location: team.php");
+    
+    $msg_alert = ($action === 'accepted') ? 'ตอบรับคำเชิญและเข้าร่วมทีมเรียบร้อยแล้ว!' : 'ปฏิเสธคำเชิญเรียบร้อยแล้ว';
+    echo "<script>alert('$msg_alert'); window.location='team.php';</script>";
     exit();
 }
 
@@ -136,7 +138,7 @@ $pending_invites = $conn->query("
     <?php if ($pending_invites && $pending_invites->num_rows > 0): ?>
         <div class="card border-warning mb-4 shadow-sm">
             <div class="card-header bg-warning bg-opacity-25 fw-bold">
-                <i class="bi bi-envelope-open-fill text-warning me-1"></i> คำเชิญเข้าร่วมทีม
+                <i class="bi bi-envelope-open-fill text-warning me-1"></i> คำเชิญเข้าร่วมทีมที่คุณได้รับ
             </div>
             <div class="card-body">
                 <?php while ($inv = $pending_invites->fetch_assoc()): ?>
@@ -146,7 +148,7 @@ $pending_invites = $conn->query("
                             <br><small class="text-muted">หัวหน้าทีม: <?= htmlspecialchars($inv['leader_name']) ?></small>
                         </div>
                         <div>
-                            <a href="team.php?action=accept&member_id=<?= $inv['member_id'] ?>" class="btn btn-success btn-sm">เข้าร่วม</a>
+                            <a href="team.php?action=accept&member_id=<?= $inv['member_id'] ?>" class="btn btn-success btn-sm fw-bold">เข้าร่วม</a>
                             <a href="team.php?action=reject&member_id=<?= $inv['member_id'] ?>" class="btn btn-outline-danger btn-sm">ปฏิเสธ</a>
                         </div>
                     </div>

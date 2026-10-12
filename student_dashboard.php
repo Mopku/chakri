@@ -12,6 +12,16 @@ $user_id = $_SESSION['user_id'];
 $fullname = $_SESSION['fullname'] ?? 'นักศึกษา';
 $student_id = $_SESSION['student_id'] ?? '-';
 
+// 1. ดึงข้อมูลคำเชิญเข้าทีมที่ยังไม่ได้ตอบรับ (Pending Invites Notification)
+$pending_invites = $conn->query("
+    SELECT tm.id AS member_id, t.team_name, t.team_color, u.fullname AS leader_name
+    FROM team_members tm
+    JOIN teams t ON tm.team_id = t.id
+    JOIN users u ON t.leader_id = u.id
+    WHERE tm.user_id = $user_id AND tm.status = 'pending'
+");
+$pending_count = $pending_invites ? $pending_invites->num_rows : 0;
+
 // คำนวณชั่วโมงสะสมรวม
 $sum_sql = "SELECT SUM(a.hours) AS total_hours 
             FROM attendance att 
@@ -43,9 +53,7 @@ $history_result = $stmt_hist->get_result();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
-        body {
-            background-color: #f8f9fa;
-        }
+        body { background-color: #f8f9fa; }
     </style>
 </head>
 <body>
@@ -62,6 +70,23 @@ $history_result = $stmt_hist->get_result();
 
 <div class="container my-4" style="max-width: 900px;">
 
+    <!-- 🔔 การแจ้งเตือนคำเชิญเข้าทีม (จะเด้งขึ้นมาเมื่อมีเพื่อนส่งคำเชิญมา) -->
+    <?php if ($pending_count > 0): ?>
+        <div class="card border-warning bg-warning bg-opacity-10 mb-4 shadow-sm border-2">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="fw-bold text-dark mb-1">
+                        <i class="bi bi-bell-fill text-warning me-1"></i> มีคำเชิญเข้าร่วมทีมส่งถึงคุณ (<?= $pending_count ?> รายการ)
+                    </h6>
+                    <small class="text-muted">เพื่อนได้ส่งคำเชิญให้คุณเข้าร่วมทีมกีฬา กดเพื่อตอบรับหรือปฏิเสธคำเชิญ</small>
+                </div>
+                <a href="team.php" class="btn btn-warning fw-bold text-dark shadow-sm">
+                    ดูคำเชิญ / ตอบรับ <i class="bi bi-arrow-right-short"></i>
+                </a>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- การ์ดแสดงชั่วโมงรวม -->
     <div class="card bg-primary text-white p-4 rounded-4 shadow-sm border-0 mb-4">
         <div class="d-flex justify-content-between align-items-center">
@@ -76,15 +101,20 @@ $history_result = $stmt_hist->get_result();
         </div>
     </div>
 
-    <!-- ปุ่มป๊อปอัปเมนูการทำงานหลัก (เพิ่มปุ่มสร้างทีมตรงนี้) -->
+    <!-- ปุ่มการทำงานหลัก -->
     <div class="d-flex justify-content-between align-items-center mb-3">
         <a href="schedule_landing.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> ดูตารางแข่งขัน
         </a>
         
-        <!-- ปุ่มกดไปสร้างทีม / จัดการทีมกีฬา -->
-        <a href="team.php" class="btn btn-warning fw-bold text-dark shadow-sm rounded-pill px-4">
+        <!-- ปุ่มกดไปจัดการทีมกีฬา (ติด Badge ตัวเลขแจ้งเตือนถ้ามีคำเชิญ) -->
+        <a href="team.php" class="btn btn-warning fw-bold text-dark shadow-sm rounded-pill px-4 position-relative">
             <i class="bi bi-people-fill me-1"></i> สร้างทีมกีฬา / ชวนเพื่อนเข้าทีม
+            <?php if ($pending_count > 0): ?>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                    <?= $pending_count ?>
+                </span>
+            <?php endif; ?>
         </a>
     </div>
 
