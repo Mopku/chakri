@@ -34,7 +34,7 @@ if ($is_logged_in) {
     $history_result = $stmt_hist->get_result();
 }
 
-// 3. ดึงเฉพาะ "รายการแข่งขันกีฬาล่าสุด" ที่แอดมินสร้างขึ้น (ดึงรายการล่าสุดมาแสดง)
+// 3. ดึงรายการแข่งขันกีฬาล่าสุดที่แอดมินสร้างขึ้น
 $latest_matches = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -147,10 +147,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
     <?= $complaint_msg ?>
 
-    <!-- ส่วนที่ 2: ตารางการแข่งขันล่าสุดที่แอดมินสร้างขึ้น -->
-    <div class="card card-custom mb-4">
+    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน (ดึงรายการที่แอดมินสร้าง) -->
+    <div class="card card-custom mb-4" id="match-schedule">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาล่าสุด</h6>
+            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางการแข่งขันกีฬาประจำวัน</h6>
             <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE</span>
         </div>
         <div class="card-body p-2">
@@ -188,14 +188,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                     </div>
                 <?php endwhile; ?>
             <?php else: ?>
-                <div class="p-4 text-center text-muted">ยังไม่มีรายการแข่งขันล่าสุดในขณะนี้</div>
+                <div class="p-4 text-center text-muted">ยังไม่มีรายการแข่งขันในขณะนี้</div>
             <?php endif; ?>
 
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: ปุ่มกด Action ต่างๆ -->
+    <!-- ส่วนที่ 3: ปุ่มกด Action ต่างๆ (เปลี่ยนปุ่มเอาคิวอาร์ออก เป็นปุ่มดูตารางการแข่งขัน) -->
     <div class="d-grid gap-2 mb-4">
+        <!-- ปุ่มกดดูตารางการแข่งขัน (เลื่อนไปยังการ์ดตารางแข่งขัน) -->
+        <a href="#match-schedule" class="btn btn-success btn-lg rounded-pill shadow-sm fw-bold">
+            <i class="bi bi-calendar-check-fill me-1"></i> ดูตารางการแข่งขันทั้งหมด
+        </a>
+
         <?php if ($is_logged_in): ?>
             <a href="team.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
                 <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
