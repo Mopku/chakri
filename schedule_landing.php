@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <?php else: ?>
         <div class="card card-custom bg-warning bg-opacity-10 border-warning mb-4 p-3 text-center">
             <h6 class="fw-bold text-dark mb-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> ยังไม่ได้เข้าสู่ระบบ</h6>
-            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อบันทึกและดูชั่วโมงกิจกรรมสะสมของคุณ</p>
+            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อบันทึก สร้างทีม และดูชั่วโมงกิจกรรมสะสมของคุณ</p>
             <a href="login.php" class="btn btn-warning btn-sm fw-bold">เข้าสู่ระบบ / สมัครสมาชิก</a>
         </div>
     <?php endif; ?>
@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <!-- ข้อความแจ้งเตือนเมื่อส่งข้อร้องเรียนสำเร็จ -->
     <?= $complaint_msg ?>
 
-    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน (ดูสถานะ LIVE ได้ทุกคน) -->
+    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน -->
     <div class="card card-custom mb-4">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางแข่งขันวันนี้</h6>
@@ -196,8 +196,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: ปุ่มกดดูประวัติ และ ปุ่มแจ้งปัญหา/ร้องเรียน -->
+    <!-- ส่วนที่ 3: ปุ่มกด Action ต่างๆ -->
     <div class="d-grid gap-2 mb-4">
+        
+        <!-- เพิ่มปุ่มสำหรับกดไปสร้างทีม / จัดการทีมกีฬา -->
+        <?php if ($is_logged_in): ?>
+            <a href="team.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
+                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
+            </a>
+        <?php else: ?>
+            <a href="login.php" class="btn btn-warning btn-lg rounded-pill shadow-sm fw-bold text-dark">
+                <i class="bi bi-people-fill me-1"></i> จัดการทีมกีฬา / สร้างทีม & ชวนเพื่อน
+            </a>
+        <?php endif; ?>
+
         <a href="student_dashboard.php" class="btn btn-outline-primary btn-lg rounded-pill shadow-sm">
             <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
         </a>
