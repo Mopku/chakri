@@ -43,6 +43,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance']))
     }
 }
 
+// ระบบค้นหาชื่อทีมกีฬา (สำหรับแอดมิน)
+$search_team = trim($_GET['search_team'] ?? '');
+$team_query = "
+    SELECT t.*, u.fullname AS leader_name, u.student_id AS leader_student_id,
+           (SELECT COUNT(*) FROM team_members WHERE team_id = t.id AND status = 'accepted') AS member_count
+    FROM teams t
+    JOIN users u ON t.leader_id = u.id
+";
+if (!empty($search_team)) {
+    $safe_search = $conn->real_escape_string($search_team);
+    $team_query .= " WHERE t.team_name LIKE '%$safe_search%' OR u.fullname LIKE '%$safe_search%'";
+}
+$team_query .= " ORDER BY t.created_at DESC";
+$teams_list = $conn->query($team_query);
+
 // ดึงข้อมูลนักศึกษาทั้งหมด
 $students_list = $conn->query("SELECT id, fullname, student_id FROM users WHERE role = 'student' ORDER BY fullname ASC");
 
@@ -62,7 +77,7 @@ $attendances = $conn->query("
     ORDER BY att.checked_in_at DESC
 ");
 
-// ดึงรายการข้อร้องเรียน/แจ้งปัญหาจากนักศึกษา
+// ดึงรายการข้อร้องเรียน
 $complaints = $conn->query("
     SELECT c.*, u.fullname, u.student_id 
     FROM complaints c 
@@ -76,7 +91,7 @@ $complaints = $conn->query("
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - จัดการเวลาและคะแนน</title>
+    <title>Admin Dashboard - จัดการระบบกิจกรรมและทีมกีฬา</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
@@ -95,6 +110,80 @@ $complaints = $conn->query("
 <div class="container my-4">
 
     <?= $message ?>
+
+    <!-- 🏆 ส่วนแจ้งเตือนและตารางจัดการทีมกีฬาที่นักศึกษาสร้าง -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-warning text-dark py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="card-title mb-0 fw-bold">
+                <i class="bi bi-trophy-fill me-2"></i> ทีมกีฬาที่สร้างขึ้นในระบบ 
+                <span class="badge bg-dark text-white rounded-pill ms-1"><?= $teams_list ? $teams_list->num_rows : 0 ?> ทีม</span>
+            </h5>
+            
+            <!-- ช่องค้นหาชื่อทีม -->
+            <form method="GET" class="d-flex gap-2" style="max-width: 350px;">
+                <input type="text" name="search_team" class="form-control form-control-sm" placeholder="พิมพ์ชื่อทีม หรือ ชื่อหัวหน้าทีม..." value="<?= htmlspecialchars($search_team) ?>">
+                <button type="submit" class="btn btn-dark btn-sm fw-bold">ค้นหา</button>
+                <?php if (!empty($search_team)): ?>
+                    <a href="admin_dashboard.php" class="btn btn-outline-dark btn-sm">ล้าง</a>
+                <?php endif; ?>
+            </form>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 10%; text-align: center;">โลโก้</th>
+                            <th style="width: 25%;">ชื่อทีม</th>
+                            <th style="width: 20%;">สีประจำทีม</th>
+                            <th style="width: 25%;">หัวหน้าทีม</th>
+                            <th style="width: 10%; text-align: center;">จำนวนสมาชิก</th>
+                            <th style="width: 10%;">วันที่สร้างทีม</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($teams_list && $teams_list->num_rows > 0): ?>
+                            <?php while ($tm = $teams_list->fetch_assoc()): ?>
+                                <tr>
+                                    <td class="text-center">
+                                        <?php if (!empty($tm['logo_url'])): ?>
+                                            <img src="<?= htmlspecialchars($tm['logo_url']) ?>" class="rounded-circle border" style="width: 45px; height: 45px; object-fit: cover;">
+                                        <?php else: ?>
+                                            <div class="rounded-circle bg-primary text-white d-inline-flex align-items-center justify-content-center" style="width: 45px; height: 45px;">
+                                                <i class="bi bi-shield-fill"></i>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary"><?= htmlspecialchars($tm['team_color']) ?></span>
+                                    </td>
+                                    <td>
+                                        <strong><?= htmlspecialchars($tm['leader_name']) ?></strong>
+                                        <br><small class="text-muted">รหัส: <?= htmlspecialchars($tm['leader_student_id'] ?: '-') ?></small>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-info text-dark rounded-pill px-3 py-2"><?= $tm['member_count'] ?> คน</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted"><?= date('d/m/Y', strtotime($tm['created_at'])) ?></small>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    <?= !empty($search_team) ? 'ไม่พบทีมกีฬาที่ค้นหา "' . htmlspecialchars($search_team) . '"' : 'ยังไม่มีการสร้างทีมกีฬาในขณะนี้' ?>
+                                </td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
     <!-- ส่วนที่ 1: ตารางจัดการเวลาและคะแนน -->
     <div class="card shadow-sm border-0 mb-4">
