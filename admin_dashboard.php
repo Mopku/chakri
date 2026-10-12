@@ -10,7 +10,39 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 $message = '';
 
-// 1. แอดมินเพิ่มรายการเข้าร่วมกิจกรรมใหม่ให้นักศึกษา
+// 1. แอดมินสร้างแมตช์การแข่งขันใหม่
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
+    $sport_name = trim($_POST['sport_name']);
+    $team1_id   = intval($_POST['team1_id']);
+    $team2_id   = intval($_POST['team2_id']);
+    $match_time = trim($_POST['match_time']);
+    $location   = trim($_POST['location']);
+    $status     = trim($_POST['status']);
+
+    if (!empty($sport_name) && $team1_id > 0 && $team2_id > 0 && $team1_id !== $team2_id) {
+        $stmt_m = $conn->prepare("INSERT INTO matches (sport_name, team1_id, team2_id, match_time, location, status) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt_m->bind_param("siisss", $sport_name, $team1_id, $team2_id, $match_time, $location, $status);
+        if ($stmt_m->execute()) {
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+        } else {
+            $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล</div>';
+        }
+    } else {
+        $message = '<div class="alert alert-warning">กรุณาเลือกทีมที่แข่งขันให้ถูกต้องและไม่ซ้ำกัน</div>';
+    }
+}
+
+// 2. แอดมินลบรายการแข่งขัน
+if (isset($_GET['delete_match'])) {
+    $del_id = intval($_GET['delete_match']);
+    $stmt_del = $conn->prepare("DELETE FROM matches WHERE id = ?");
+    $stmt_del->bind_param("i", $del_id);
+    $stmt_del->execute();
+    header("Location: admin_dashboard.php");
+    exit();
+}
+
+// 3. แอดมินเพิ่มรายการเข้าร่วมกิจกรรมใหม่ให้นักศึกษา
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_attendance'])) {
     $user_id       = intval($_POST['user_id']);
     $activity_id   = intval($_POST['activity_id']);
@@ -22,13 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_attendance'])) {
         $stmt_add->bind_param("iisi", $user_id, $activity_id, $checked_in_at, $score);
         if ($stmt_add->execute()) {
             $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> เพิ่มการเข้าร่วมกิจกรรมและคะแนนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        } else {
-            $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล</div>';
         }
     }
 }
 
-// 2. แอดมินอัปเดตคะแนน/เวลาที่มีอยู่เดิม
+// 4. แอดมินอัปเดตคะแนน/เวลา
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance'])) {
     $attendance_id = intval($_POST['attendance_id']);
     $score         = intval($_POST['score']);
@@ -37,13 +67,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance']))
     if (!empty($checked_in_at)) {
         $stmt_u = $conn->prepare("UPDATE attendance SET score = ?, checked_in_at = ?, graded_at = NOW() WHERE id = ?");
         $stmt_u->bind_param("isi", $score, $checked_in_at, $attendance_id);
-        if ($stmt_u->execute()) {
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> บันทึกคะแนนและเวลาเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        }
+        $stmt_u->execute();
+        $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> บันทึกคะแนนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
     }
 }
 
-// ระบบค้นหาชื่อทีมกีฬา (สำหรับแอดมิน)
+// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์เลือกแมตช์แข่ง
+$all_teams_dropdown = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+$all_teams_dropdown2 = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+
+// ดึงรายการแมตช์การแข่งขันทั้งหมด
+$matches_list = $conn->query("
+    SELECT m.*, 
+           t1.team_name AS team1_name, t1.team_color AS team1_color,
+           t2.team_name AS team2_name, t2.team_color AS team2_color
+    FROM matches m
+    JOIN teams t1 ON m.team1_id = t1.id
+    JOIN teams t2 ON m.team2_id = t2.id
+    ORDER BY m.id DESC
+");
+
+// ระบบค้นหาชื่อทีมกีฬา
 $search_team = trim($_GET['search_team'] ?? '');
 $team_query = "
     SELECT t.*, u.fullname AS leader_name, u.student_id AS leader_student_id,
@@ -58,16 +102,10 @@ if (!empty($search_team)) {
 $team_query .= " ORDER BY t.created_at DESC";
 $teams_list = $conn->query($team_query);
 
-// ดึงข้อมูลนักศึกษาทั้งหมด
+// ดึงข้อมูลอื่นๆ
 $students_list = $conn->query("SELECT id, fullname, student_id FROM users WHERE role = 'student' ORDER BY fullname ASC");
-
-// ดึงข้อมูลกิจกรรมทั้งหมด
 $activities_list = $conn->query("SELECT id, title FROM activities ORDER BY title ASC");
-
-// ดึงข้อมูลกิจกรรมทั้งหมดสำหรับตารางและ QR Code
 $activities = $conn->query("SELECT id, title, description, hours, qr_token FROM activities ORDER BY title ASC");
-
-// ดึงรายการเข้าร่วมกิจกรรมทั้งหมด
 $attendances = $conn->query("
     SELECT att.id AS attendance_id, att.checked_in_at, att.summary_text, att.score, 
            u.fullname, u.student_id, a.title AS activity_title, a.hours AS default_hours
@@ -76,14 +114,16 @@ $attendances = $conn->query("
     JOIN activities a ON att.activity_id = a.id
     ORDER BY att.checked_in_at DESC
 ");
-
-// ดึงรายการข้อร้องเรียน
 $complaints = $conn->query("
     SELECT c.*, u.fullname, u.student_id 
     FROM complaints c 
     JOIN users u ON c.user_id = u.id 
     ORDER BY c.created_at DESC
 ");
+
+// สร้าง QR Code ลิงก์สำหรับเข้าชมหน้าตารางการแข่งขัน
+$schedule_landing_url = 'https://chakri-production.up.railway.app/schedule_landing.php';
+$schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($schedule_landing_url);
 ?>
 
 <!DOCTYPE html>
@@ -91,7 +131,7 @@ $complaints = $conn->query("
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - จัดการระบบกิจกรรมและทีมกีฬา</title>
+    <title>Admin Dashboard - จัดการระบบแข่งขันและกิจกรรม</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
@@ -111,15 +151,78 @@ $complaints = $conn->query("
 
     <?= $message ?>
 
-    <!-- 🏆 ส่วนแจ้งเตือนและตารางจัดการทีมกีฬาที่นักศึกษาสร้าง -->
+    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน & QR Code รับชมตารางแข่ง -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-calendar-event-fill me-2"></i> จัดการตารางการแข่งขันกีฬา</h5>
+            <div class="d-flex gap-2">
+                <button class="btn btn-light btn-sm fw-bold text-success" data-bs-toggle="modal" data-bs-target="#createMatchModal">
+                    <i class="bi bi-plus-circle-fill"></i> สร้างการแข่งขันใหม่
+                </button>
+                <button class="btn btn-warning btn-sm fw-bold text-dark" data-bs-toggle="modal" data-bs-target="#qrScheduleModal">
+                    <i class="bi bi-qr-code"></i> QR Code เว็บชมตารางแข่งขัน
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 15%;">ชนิดกีฬา</th>
+                            <th style="width: 35%; text-align: center;">คู่แข่งขัน (ทีม A VS ทีม B)</th>
+                            <th style="width: 20%;">เวลาการแข่งขัน</th>
+                            <th style="width: 15%;">สนาม / สถานที่</th>
+                            <th style="width: 10%; text-align: center;">สถานะ</th>
+                            <th style="width: 5%; text-align: center;">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if ($matches_list && $matches_list->num_rows > 0): ?>
+                            <?php while ($mc = $matches_list->fetch_assoc()): ?>
+                                <tr>
+                                    <td><span class="badge bg-primary fs-6"><?= htmlspecialchars($mc['sport_name']) ?></span></td>
+                                    <td class="text-center fw-bold">
+                                        <span class="text-primary"><?= htmlspecialchars($mc['team1_name']) ?></span>
+                                        <small class="text-muted opacity-75">(<?= htmlspecialchars($mc['team1_color']) ?>)</small>
+                                        <span class="mx-2 text-danger">VS</span>
+                                        <span class="text-primary"><?= htmlspecialchars($mc['team2_name']) ?></span>
+                                        <small class="text-muted opacity-75">(<?= htmlspecialchars($mc['team2_color']) ?>)</small>
+                                    </td>
+                                    <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= htmlspecialchars($mc['match_time']) ?></small></td>
+                                    <td><small class="text-muted"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small></td>
+                                    <td class="text-center">
+                                        <?php if ($mc['status'] === 'live'): ?>
+                                            <span class="badge bg-danger"><i class="bi bi-record-fill"></i>กำลังแข่งขัน</span>
+                                        <?php elseif ($mc['status'] === 'finished'): ?>
+                                            <span class="badge bg-success">แข่งเสร็จแล้ว</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">รอดำเนินการ</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="admin_dashboard.php?delete_match=<?= $mc['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('ยืนยันลบตารางการแข่งขันนี้?');">
+                                            <i class="bi bi-trash-fill"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีการจัดตารางแข่งขัน (กดปุ่ม "สร้างการแข่งขันใหม่" ด้านบน)</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🏆 ส่วนที่ 2: ทีมกีฬาที่สร้างขึ้นในระบบ -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-warning text-dark py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fw-bold">
                 <i class="bi bi-trophy-fill me-2"></i> ทีมกีฬาที่สร้างขึ้นในระบบ 
                 <span class="badge bg-dark text-white rounded-pill ms-1"><?= $teams_list ? $teams_list->num_rows : 0 ?> ทีม</span>
             </h5>
-            
-            <!-- ช่องค้นหาชื่อทีม -->
             <form method="GET" class="d-flex gap-2" style="max-width: 350px;">
                 <input type="text" name="search_team" class="form-control form-control-sm" placeholder="พิมพ์ชื่อทีม หรือ ชื่อหัวหน้าทีม..." value="<?= htmlspecialchars($search_team) ?>">
                 <button type="submit" class="btn btn-dark btn-sm fw-bold">ค้นหา</button>
@@ -154,30 +257,18 @@ $complaints = $conn->query("
                                             </div>
                                         <?php endif; ?>
                                     </td>
-                                    <td>
-                                        <strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary"><?= htmlspecialchars($tm['team_color']) ?></span>
-                                    </td>
+                                    <td><strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong></td>
+                                    <td><span class="badge bg-secondary"><?= htmlspecialchars($tm['team_color']) ?></span></td>
                                     <td>
                                         <strong><?= htmlspecialchars($tm['leader_name']) ?></strong>
                                         <br><small class="text-muted">รหัส: <?= htmlspecialchars($tm['leader_student_id'] ?: '-') ?></small>
                                     </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-info text-dark rounded-pill px-3 py-2"><?= $tm['member_count'] ?> คน</span>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted"><?= date('d/m/Y', strtotime($tm['created_at'])) ?></small>
-                                    </td>
+                                    <td class="text-center"><span class="badge bg-info text-dark rounded-pill px-3 py-2"><?= $tm['member_count'] ?> คน</span></td>
+                                    <td><small class="text-muted"><?= date('d/m/Y', strtotime($tm['created_at'])) ?></small></td>
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr>
-                                <td colspan="6" class="text-center py-4 text-muted">
-                                    <?= !empty($search_team) ? 'ไม่พบทีมกีฬาที่ค้นหา "' . htmlspecialchars($search_team) . '"' : 'ยังไม่มีการสร้างทีมกีฬาในขณะนี้' ?>
-                                </td>
-                            </tr>
+                            <tr><td colspan="6" class="text-center py-4 text-muted">ไม่พบทีมกีฬา</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -185,7 +276,7 @@ $complaints = $conn->query("
         </div>
     </div>
 
-    <!-- ส่วนที่ 1: ตารางจัดการเวลาและคะแนน -->
+    <!-- ส่วนที่ 3: จัดการคะแนน & เวลาเข้าร่วมกิจกรรม -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0 fw-bold"><i class="bi bi-person-check-fill me-2"></i> จัดการคะแนน & เวลาเข้าร่วมกิจกรรม</h5>
@@ -198,55 +289,29 @@ $complaints = $conn->query("
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 18%;">นักศึกษา</th>
-                            <th style="width: 15%;">กิจกรรม</th>
-                            <th style="width: 22%;">สรุปผลกิจกรรม</th>
-                            <th style="width: 20%;">เวลาเข้าร่วมกิจกรรม</th>
-                            <th style="width: 10%;">คะแนน (100)</th>
-                            <th style="width: 15%; text-align: center;">จัดการ</th>
+                            <th>นักศึกษา</th>
+                            <th>กิจกรรม</th>
+                            <th>สรุปผล</th>
+                            <th>เวลาเข้าร่วม</th>
+                            <th>คะแนน (100)</th>
+                            <th class="text-center">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if ($attendances && $attendances->num_rows > 0): ?>
                             <?php while ($row = $attendances->fetch_assoc()): ?>
                                 <tr>
-                                    <td>
-                                        <strong><?= htmlspecialchars($row['fullname']) ?></strong>
-                                        <br><small class="text-muted">รหัส: <?= htmlspecialchars($row['student_id'] ?: '-') ?></small>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-primary mb-1"><?= htmlspecialchars($row['activity_title']) ?></span>
-                                        <br><small class="text-muted">+<?= $row['default_hours'] ?> ชม.</small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($row['summary_text'])): ?>
-                                            <small class="d-block text-dark bg-white p-2 border rounded" style="max-height: 80px; overflow-y: auto;">
-                                                <?= nl2br(htmlspecialchars($row['summary_text'])) ?>
-                                            </small>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary opacity-75">ยังไม่ส่งสรุปผล</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    
+                                    <td><strong><?= htmlspecialchars($row['fullname']) ?></strong><br><small class="text-muted">รหัส: <?= htmlspecialchars($row['student_id'] ?: '-') ?></small></td>
+                                    <td><span class="badge bg-primary mb-1"><?= htmlspecialchars($row['activity_title']) ?></span><br><small class="text-muted">+<?= $row['default_hours'] ?> ชม.</small></td>
+                                    <td><?= !empty($row['summary_text']) ? '<small class="d-block text-dark bg-white p-2 border rounded">' . nl2br(htmlspecialchars($row['summary_text'])) . '</small>' : '<span class="badge bg-secondary opacity-75">ยังไม่ส่งสรุปผล</span>' ?></td>
                                     <form method="POST">
                                         <input type="hidden" name="attendance_id" value="<?= $row['attendance_id'] ?>">
-                                        <td>
-                                            <?php $formatted_time = $row['checked_in_at'] ? date('Y-m-d\TH:i', strtotime($row['checked_in_at'])) : ''; ?>
-                                            <input type="datetime-local" name="checked_in_at" class="form-control form-control-sm" value="<?= $formatted_time ?>" required>
-                                        </td>
-                                        <td>
-                                            <input type="number" name="score" class="form-control form-control-sm text-center" min="0" max="100" value="<?= $row['score'] ?>" placeholder="0-100" required>
-                                        </td>
-                                        <td class="text-center">
-                                            <button type="submit" name="update_attendance" class="btn btn-sm btn-success w-100">
-                                                <i class="bi bi-save-fill"></i> บันทึก
-                                            </button>
-                                        </td>
+                                        <td><input type="datetime-local" name="checked_in_at" class="form-control form-control-sm" value="<?= $row['checked_in_at'] ? date('Y-m-d\TH:i', strtotime($row['checked_in_at'])) : '' ?>" required></td>
+                                        <td><input type="number" name="score" class="form-control form-control-sm text-center" min="0" max="100" value="<?= $row['score'] ?>" required></td>
+                                        <td class="text-center"><button type="submit" name="update_attendance" class="btn btn-sm btn-success w-100"><i class="bi bi-save-fill"></i> บันทึก</button></td>
                                     </form>
                                 </tr>
                             <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีรายการเข้าร่วมกิจกรรม</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -254,70 +319,7 @@ $complaints = $conn->query("
         </div>
     </div>
 
-    <!-- ส่วนที่ 2: รายการกิจกรรมทั้งหมด + ปุ่มแสดง QR Code -->
-    <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header bg-secondary text-white fw-bold">
-            <h5 class="card-title mb-0 fs-6"><i class="bi bi-qr-code-scan me-2"></i> รายการกิจกรรม &amp; สแกนรับ QR Code</h5>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>ชื่อกิจกรรม</th>
-                            <th>รายละเอียด</th>
-                            <th>ชั่วโมง</th>
-                            <th class="text-center">สร้าง QR Code เช็กชื่อ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($activities && $activities->num_rows > 0): ?>
-                            <?php while ($act = $activities->fetch_assoc()): ?>
-                                <?php
-                                    $base_domain = 'https://chakri-production.up.railway.app';
-                                    $checkin_url = $base_domain . '/checkin_direct.php?token=' . rawurlencode($act['qr_token']);
-                                    $qr_api_url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($checkin_url);
-                                ?>
-                                <tr>
-                                    <td><strong><?= htmlspecialchars($act['title']) ?></strong></td>
-                                    <td><small class="text-muted"><?= htmlspecialchars($act['description'] ?? '') ?></small></td>
-                                    <td><span class="badge bg-success">+<?= htmlspecialchars((string) $act['hours']) ?> ชม.</span></td>
-                                    <td class="text-center">
-                                        <button class="btn btn-sm btn-dark" data-bs-toggle="modal" data-bs-target="#qrModal<?= (int) $act['id'] ?>">
-                                            <i class="bi bi-qr-code"></i> แสดง QR Code
-                                        </button>
-
-                                        <div class="modal fade" id="qrModal<?= (int) $act['id'] ?>" tabindex="-1">
-                                            <div class="modal-dialog modal-dialog-centered">
-                                                <div class="modal-content text-center p-3">
-                                                    <div class="modal-header">
-                                                        <h5 class="modal-title fw-bold">QR Code เช็กชื่อ: <?= htmlspecialchars($act['title']) ?></h5>
-                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                    </div>
-                                                    <div class="modal-body my-2">
-                                                        <img src="<?= htmlspecialchars($qr_api_url) ?>" alt="QR Code" class="img-fluid border p-2 rounded shadow-sm mb-3">
-                                                        <p class="text-muted small mb-1">ให้นักศึกษาสแกน QR Code นี้ด้วยกล้องมือถือเพื่อเช็กชื่อ</p>
-                                                        <small class="text-primary d-block text-break">URL: <?= htmlspecialchars($checkin_url) ?></small>
-                                                    </div>
-                                                    <div class="modal-footer justify-content-center">
-                                                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr><td colspan="4" class="text-center py-4 text-muted">ยังไม่มีกิจกรรม</td></tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- ส่วนที่ 3: ตารางรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา -->
+    <!-- ส่วนที่ 4: รายการแจ้งปัญหา / ข้อร้องเรียน -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0 fs-6"><i class="bi bi-chat-square-text-fill me-2"></i> รายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา</h5>
@@ -327,36 +329,18 @@ $complaints = $conn->query("
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
-                        <tr>
-                            <th style="width: 20%;">นักศึกษา</th>
-                            <th style="width: 20%;">หัวข้อเรื่อง</th>
-                            <th style="width: 42%;">รายละเอียด / ข้อความ</th>
-                            <th style="width: 18%;">วันที่แจ้ง</th>
-                        </tr>
+                        <tr><th>นักศึกษา</th><th>หัวข้อ</th><th>รายละเอียด</th><th>วันที่แจ้ง</th></tr>
                     </thead>
                     <tbody>
                         <?php if ($complaints && $complaints->num_rows > 0): ?>
                             <?php while ($cp = $complaints->fetch_assoc()): ?>
                                 <tr>
-                                    <td>
-                                        <strong><?= htmlspecialchars($cp['fullname']) ?></strong>
-                                        <br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span>
-                                    </td>
-                                    <td>
-                                        <div class="p-2 bg-light rounded text-dark border">
-                                            <?= nl2br(htmlspecialchars($cp['message'])) ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <small class="text-muted"><i class="bi bi-clock"></i> <?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
-                                    </td>
+                                    <td><strong><?= htmlspecialchars($cp['fullname']) ?></strong><br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small></td>
+                                    <td><span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span></td>
+                                    <td><div class="p-2 bg-light rounded text-dark border"><?= nl2br(htmlspecialchars($cp['message'])) ?></div></td>
+                                    <td><small class="text-muted"><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small></td>
                                 </tr>
                             <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr><td colspan="4" class="text-center py-4 text-muted">ยังไม่มีข้อร้องเรียน หรือ รายการแจ้งปัญหาในขณะนี้</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -364,6 +348,101 @@ $complaints = $conn->query("
         </div>
     </div>
 
+</div>
+
+<!-- Modal สำหรับสร้างแมตช์การแข่งขันใหม่ -->
+<div class="modal fade" id="createMatchModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold"><i class="bi bi-trophy"></i> สร้างตารางการแข่งขันใหม่</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">ชนิดกีฬา</label>
+                        <select name="sport_name" class="form-select" required>
+                            <option value="">-- เลือกประเภทกีฬา --</option>
+                            <option value="ฟุตบอล">⚽ ฟุตบอล</option>
+                            <option value="บาสเกตบอล">🏀 บาสเกตบอล</option>
+                            <option value="วอลเลย์บอล">🏐 วอลเลย์บอล</option>
+                            <option value="แบดมินตัน">🏸 แบดมินตัน</option>
+                            <option value="เปตอง">⚪ เปตอง</option>
+                            <option value="E-Sports">🎮 E-Sports</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">ทีมแข่งขันที่ 1 (ฝั่ง A)</label>
+                        <select name="team1_id" class="form-select" required>
+                            <option value="">-- เลือกทีมที่ 1 --</option>
+                            <?php if ($all_teams_dropdown): ?>
+                                <?php while ($t1 = $all_teams_dropdown->fetch_assoc()): ?>
+                                    <option value="<?= $t1['id'] ?>"><?= htmlspecialchars($t1['team_name']) ?> (<?= htmlspecialchars($t1['team_color']) ?>)</option>
+                                <?php endwhile; ?>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">ทีมแข่งขันที่ 2 (ฝั่ง B)</label>
+                        <select name="team2_id" class="form-select" required>
+                            <option value="">-- เลือกทีมที่ 2 --</option>
+                            <?php if ($all_teams_dropdown2): ?>
+                                <?php while ($t2 = $all_teams_dropdown2->fetch_assoc()): ?>
+                                    <option value="<?= $t2['id'] ?>"><?= htmlspecialchars($t2['team_name']) ?> (<?= htmlspecialchars($t2['team_color']) ?>)</option>
+                                <?php endwhile; ?>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">เวลาการแข่งขัน</label>
+                        <input type="text" name="match_time" class="form-control" placeholder="เช่น 10:00 - 11:30 น. (รอบรองฯ)" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">สนาม / สถานที่แข่งขัน</label>
+                        <input type="text" name="location" class="form-control" placeholder="เช่น สนาม 1 (คอร์ท A) อาคารศูนย์กีฬา" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">สถานะแมตช์</label>
+                        <select name="status" class="form-select" required>
+                            <option value="live">🔴 กำลังแข่งขัน (LIVE)</option>
+                            <option value="upcoming" selected>⏳ รอดำเนินการ</option>
+                            <option value="finished">✅ แข่งเสร็จแล้ว</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="submit" name="create_match" class="btn btn-success fw-bold"><i class="bi bi-plus-lg"></i> สร้างตารางแข่ง</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal สำหรับแสดง QR Code เว็บไซต์เข้าชมตารางแข่งขัน -->
+<div class="modal fade" id="qrScheduleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center p-3">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-qr-code"></i> QR Code เว็บไซต์ตารางการแข่งขัน</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body my-2">
+                <img src="<?= htmlspecialchars($schedule_qr_api) ?>" alt="QR Code Schedule" class="img-fluid border p-2 rounded shadow-sm mb-3">
+                <p class="text-muted small mb-1">สแกน QR Code นี้เพื่อเข้าสู่หน้าชมตารางแข่งขันและกิจกรรม</p>
+                <small class="text-primary d-block text-break">URL: <?= htmlspecialchars($schedule_landing_url) ?></small>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Modal สำหรับเพิ่มรายการเข้าร่วมกิจกรรมใหม่ -->
@@ -387,7 +466,6 @@ $complaints = $conn->query("
                             <?php endif; ?>
                         </select>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">เลือกกิจกรรม</label>
                         <select name="activity_id" class="form-select" required>
@@ -399,12 +477,10 @@ $complaints = $conn->query("
                             <?php endif; ?>
                         </select>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">วันที่และเวลาเข้าร่วม</label>
                         <input type="datetime-local" name="checked_in_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>" required>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold">คะแนน (0-100)</label>
                         <input type="number" name="score" class="form-control" min="0" max="100" value="0" required>
