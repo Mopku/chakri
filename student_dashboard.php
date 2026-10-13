@@ -11,11 +11,14 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 $user_id = $_SESSION['user_id'];
 $fullname = $_SESSION['fullname'] ?? 'นักศึกษา';
 $student_id = $_SESSION['student_id'] ?? '-';
+$message = '';
 
+// =========================================================
+// 📌 ระบบประมวลผลการสร้างทีมกีฬาใหม่
+// =========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);  // ชื่อทีม หรือ สีประจำทีม (เช่น สีฟ้า)
     $sport_name = trim($_POST['sport_name']); // ชนิดกีฬา (เช่น E-Sports, บาสเกตบอล)
-    $user_id    = $_SESSION['user_id'];
 
     if (!empty($team_name) && !empty($sport_name)) {
         // 1. ตรวจสอบก่อนว่า มีทีมชื่อนี้ + ลงแข่งกีฬาชนิดนี้ ไปแล้วหรือยัง
@@ -31,12 +34,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>';
         } else {
-            // ✅ ถ้าชื่อทีม/สี ซ้ำ แต่เป็นชนิดกีฬาต่างกัน -> อนุญาตให้บันทึกสร้างทีมได้
-            $stmt_ins = $conn->prepare("INSERT INTO teams (team_name, sport_name, leader_id) VALUES (?, ?, ?)");
-            $stmt_ins->bind_param("ssi", $team_name, $sport_name, $user_id);
+            // ✅ ถ้าไม่ซ้ำ -> สร้างทีมใหม่
+            // กำหนดให้ team_color ใช้ค่าเดียวกับ team_name หรือรับแยกตามฟอร์ม
+            $team_color = $team_name; 
+
+            $stmt_ins = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, leader_id) VALUES (?, ?, ?, ?)");
+            $stmt_ins->bind_param("sssi", $team_name, $team_color, $sport_name, $user_id);
+            
             if ($stmt_ins->execute()) {
+                $new_team_id = $stmt_ins->insert_id;
+
+                // 2. เพิ่มหัวหน้าทีมเข้าไปในตาราง team_members โดยอัตโนมัติ (สถานะ accepted)
+                $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
+                $stmt_m->bind_param("ii", $new_team_id, $user_id);
+                $stmt_m->execute();
+
                 $message = '<div class="alert alert-success alert-dismissible fade show">
-                    <i class="bi bi-check-circle-fill me-1"></i> สร้างทีม ' . htmlspecialchars($team_name) . ' (' . htmlspecialchars($sport_name) . ') สำเร็จเรียบร้อยแล้ว!
+                    <i class="bi bi-check-circle-fill me-1"></i> สร้างทีม <strong>' . htmlspecialchars($team_name) . '</strong> (' . htmlspecialchars($sport_name) . ') สำเร็จเรียบร้อยแล้ว!
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>';
             }
@@ -101,6 +115,9 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
 
 <div class="container my-4" style="max-width: 900px;">
 
+    <!-- 📢 แสดงข้อความแจ้งเตือน (ถ้ามี) -->
+    <?= $message ?>
+
     <!-- 🔔 การแจ้งเตือนคำเชิญเข้าทีม -->
     <?php if ($pending_count > 0): ?>
         <div class="card border-warning bg-warning bg-opacity-10 mb-4 shadow-sm border-2">
@@ -132,7 +149,7 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
 
                 <div>
                     <?php if ($my_team): ?>
-                        <span class="badge bg-info text-dark mb-1"><?= htmlspecialchars($my_team['team_color']) ?></span>
+                        <span class="badge bg-info text-dark mb-1"><?= htmlspecialchars($my_team['sport_name'] ?? $my_team['team_color']) ?></span>
                         <h5 class="fw-bold mb-0 text-dark"><?= htmlspecialchars($my_team['team_name']) ?></h5>
                         <small class="text-muted">หัวหน้าทีม: <?= htmlspecialchars($my_team['leader_name']) ?> | สมาชิก: <?= $my_team['member_count'] ?> คน</small>
                     <?php else: ?>
