@@ -66,8 +66,8 @@ if (isset($_GET['delete_match'])) {
     exit();
 }
 
-// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์เลือกแมตช์แข่งและใช้กรองประวัติ
-$all_teams_list = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์ (เรียงตามชนิดกีฬา เพื่อให้ง่ายต่อการเลือก)
+$all_teams_list = $conn->query("SELECT id, team_name, team_color, sport_name FROM teams ORDER BY sport_name ASC, team_name ASC");
 
 // ดึงรายการแมตช์การแข่งขันทั้งหมด
 $matches_list = $conn->query("
@@ -80,7 +80,7 @@ $matches_list = $conn->query("
     ORDER BY m.id DESC
 ");
 
-// ระบบค้นหาชื่อทีมกีฬา
+// ระบบค้นหาชื่อทีมกีฬา (เพิ่มการดึง sport_name และเรียงตามชนิดกีฬา)
 $search_team = trim($_GET['search_team'] ?? '');
 $team_query = "
     SELECT t.*, u.fullname AS leader_name, u.student_id AS leader_student_id,
@@ -92,7 +92,7 @@ if (!empty($search_team)) {
     $safe_search = $conn->real_escape_string($search_team);
     $team_query .= " WHERE t.team_name LIKE '%$safe_search%' OR u.fullname LIKE '%$safe_search%'";
 }
-$team_query .= " ORDER BY t.created_at DESC";
+$team_query .= " ORDER BY t.sport_name ASC, t.created_at DESC";
 $teams_list = $conn->query($team_query);
 
 // 5. ระบบกรองประวัติรายการแจ้งปัญหา / ข้อร้องเรียน (ค้นหาตามวันที่ และ ตามทีม)
@@ -238,12 +238,13 @@ $complaints = $conn->query($complaint_sql);
                     <thead class="table-light">
                         <tr>
                             <th style="width: 8%; text-align: center;">โลโก้</th>
-                            <th style="width: 22%;">ชื่อทีม</th>
-                            <th style="width: 18%;">สีประจำทีม</th>
-                            <th style="width: 22%;">หัวหน้าทีม</th>
+                            <th style="width: 17%;">ชื่อทีม</th>
+                            <th style="width: 15%;">ชนิดกีฬา</th> <!-- เพิ่มคอลัมน์ชนิดกีฬา -->
+                            <th style="width: 15%;">สีประจำทีม</th>
+                            <th style="width: 20%;">หัวหน้าทีม</th>
                             <th style="width: 10%; text-align: center;">จำนวนสมาชิก</th>
                             <th style="width: 10%;">วันที่สร้าง</th>
-                            <th style="width: 10%; text-align: center;">จัดการ</th>
+                            <th style="width: 5%; text-align: center;">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -260,6 +261,16 @@ $complaints = $conn->query($complaint_sql);
                                         <?php endif; ?>
                                     </td>
                                     <td><strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong></td>
+                                    
+                                    <!-- นำชนิดกีฬามาแสดงให้แอดมินดู -->
+                                    <td>
+                                        <?php if (!empty($tm['sport_name'])): ?>
+                                            <span class="badge bg-dark rounded-pill px-2 py-1"><?= htmlspecialchars($tm['sport_name']) ?></span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">ไม่ระบุ</span>
+                                        <?php endif; ?>
+                                    </td>
+
                                     <td><span class="badge bg-secondary"><?= htmlspecialchars($tm['team_color']) ?></span></td>
                                     <td>
                                         <strong><?= htmlspecialchars($tm['leader_name']) ?></strong>
@@ -275,7 +286,7 @@ $complaints = $conn->query($complaint_sql);
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="7" class="text-center py-4 text-muted">ไม่พบทีมกีฬา</td></tr>
+                            <tr><td colspan="8" class="text-center py-4 text-muted">ไม่พบทีมกีฬา</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -360,7 +371,7 @@ $complaints = $conn->query($complaint_sql);
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label fw-bold">ชนิดกีฬา</label>
-                        <select name="sport_name" class="form-select" required>
+                        <select name="sport_name" id="sport_select" class="form-select" required>
                             <option value="">-- เลือกประเภทกีฬา --</option>
                             <option value="ฟุตบอล">⚽ ฟุตบอล</option>
                             <option value="บาสเกตบอล">🏀 บาสเกตบอล</option>
@@ -373,13 +384,14 @@ $complaints = $conn->query($complaint_sql);
 
                     <div class="mb-3">
                         <label class="form-label fw-bold">ทีมแข่งขันที่ 1 (ฝั่ง A)</label>
-                        <select name="team1_id" class="form-select" required>
-                            <option value="">-- เลือกทีมที่ 1 --</option>
+                        <select name="team1_id" id="team1_select" class="form-select" required disabled>
+                            <option value="">-- กรุณาเลือกประเภทกีฬาก่อน --</option>
                             <?php 
                             if ($all_teams_list) {
                                 $all_teams_list->data_seek(0);
                                 while ($t1 = $all_teams_list->fetch_assoc()) {
-                                    echo '<option value="' . $t1['id'] . '">' . htmlspecialchars($t1['team_name']) . ' (' . htmlspecialchars($t1['team_color']) . ')</option>';
+                                    $sport = htmlspecialchars($t1['sport_name'] ?? '');
+                                    echo '<option value="' . $t1['id'] . '" data-sport="' . $sport . '">' . htmlspecialchars($t1['team_name']) . ' (' . htmlspecialchars($t1['team_color']) . ') - ' . $sport . '</option>';
                                 }
                             }
                             ?>
@@ -388,13 +400,14 @@ $complaints = $conn->query($complaint_sql);
 
                     <div class="mb-3">
                         <label class="form-label fw-bold">ทีมแข่งขันที่ 2 (ฝั่ง B)</label>
-                        <select name="team2_id" class="form-select" required>
-                            <option value="">-- เลือกทีมที่ 2 --</option>
+                        <select name="team2_id" id="team2_select" class="form-select" required disabled>
+                            <option value="">-- กรุณาเลือกประเภทกีฬาก่อน --</option>
                             <?php 
                             if ($all_teams_list) {
                                 $all_teams_list->data_seek(0);
                                 while ($t2 = $all_teams_list->fetch_assoc()) {
-                                    echo '<option value="' . $t2['id'] . '">' . htmlspecialchars($t2['team_name']) . ' (' . htmlspecialchars($t2['team_color']) . ')</option>';
+                                    $sport = htmlspecialchars($t2['sport_name'] ?? '');
+                                    echo '<option value="' . $t2['id'] . '" data-sport="' . $sport . '">' . htmlspecialchars($t2['team_name']) . ' (' . htmlspecialchars($t2['team_color']) . ') - ' . $sport . '</option>';
                                 }
                             }
                             ?>
@@ -427,5 +440,57 @@ $complaints = $conn->query($complaint_sql);
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// สคริปต์กรองทีมกีฬาอัตโนมัติ: เมื่อเลือกกีฬาอะไร จะแสดงเฉพาะทีมของกีฬานั้นๆ
+document.addEventListener('DOMContentLoaded', function() {
+    const sportSelect = document.getElementById('sport_select');
+    const team1Select = document.getElementById('team1_select');
+    const team2Select = document.getElementById('team2_select');
+
+    function filterTeamsBySport() {
+        const selectedSport = sportSelect.value;
+        
+        // ถ้ายังไม่ได้เลือกกีฬา ให้ปิดการเลือกทีมไว้
+        if(selectedSport === "") {
+            team1Select.disabled = true;
+            team2Select.disabled = true;
+            team1Select.options[0].text = "-- กรุณาเลือกประเภทกีฬาก่อน --";
+            team2Select.options[0].text = "-- กรุณาเลือกประเภทกีฬาก่อน --";
+            team1Select.value = "";
+            team2Select.value = "";
+            return;
+        }
+
+        team1Select.disabled = false;
+        team2Select.disabled = false;
+        team1Select.options[0].text = "-- เลือกทีมที่ 1 --";
+        team2Select.options[0].text = "-- เลือกทีมที่ 2 --";
+
+        // กรองทีม 1
+        Array.from(team1Select.options).forEach(option => {
+            if (option.value === "") return; // ข้ามตัวเลือกเริ่มต้น
+            if (option.getAttribute('data-sport') === selectedSport) {
+                option.style.display = 'block';
+            } else {
+                option.style.display = 'none';
+            }
+        });
+        team1Select.value = ""; 
+
+        // กรองทีม 2
+        Array.from(team2Select.options).forEach(option => {
+            if (option.value === "") return; // ข้ามตัวเลือกเริ่มต้น
+            if (option.getAttribute('data-sport') === selectedSport) {
+                option.style.display = 'block';
+            } else {
+                option.style.display = 'none';
+            }
+        });
+        team2Select.value = ""; 
+    }
+
+    sportSelect.addEventListener('change', filterTeamsBySport);
+});
+</script>
 </body>
 </html>
