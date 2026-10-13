@@ -20,7 +20,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
     $admin_id = $_SESSION['user_id'];
 
     if ($complaint_id > 0 && !empty($reply_text)) {
-        // 1. สร้างตารางเก็บประวัติการสนทนาอัตโนมัติ (เผื่อยังไม่มี)
         $conn->query("CREATE TABLE IF NOT EXISTS complaint_replies (
             id INT AUTO_INCREMENT PRIMARY KEY,
             complaint_id INT NOT NULL,
@@ -30,17 +29,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )");
 
-        // 2. บันทึกข้อความตอบกลับของแอดมินลงใน complaint_replies
         $stmt_rep = $conn->prepare("INSERT INTO complaint_replies (complaint_id, sender_type, sender_id, message) VALUES (?, 'admin', ?, ?)");
         $stmt_rep->bind_param("iis", $complaint_id, $admin_id, $reply_text);
         
         if ($stmt_rep->execute()) {
-            // 3. อัปเดตข้อความล่าสุดลงในตาราง complaints ด้วย
             $stmt_up = $conn->prepare("UPDATE complaints SET admin_reply = ? WHERE id = ?");
             $stmt_up->bind_param("si", $reply_text, $complaint_id);
             $stmt_up->execute();
 
-            // 4. สร้างตารางแจ้งเตือนและส่งแจ้งเตือนหานักศึกษา
             $conn->query("CREATE TABLE IF NOT EXISTS notifications (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -55,8 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
             $stmt_notif->execute();
 
             $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> บันทึกและส่งข้อความตอบกลับให้นักศึกษาเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        } else {
-            $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกคำตอบกลับ</div>';
         }
     }
 }
@@ -71,7 +65,7 @@ if (isset($_GET['delete_team_by_admin'])) {
     }
 }
 
-// 2. แอดมินสร้างแมตช์การแข่งขันใหม่ (พร้อมระบบแจ้งเตือนลูกทีม)
+// 2. แอดมินสร้างแมตช์การแข่งขันใหม่
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     $sport_name = trim($_POST['sport_name']);
     $team1_id   = intval($_POST['team1_id']);
@@ -122,25 +116,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
                 }
             }
 
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันและแจ้งเตือนไปยังนักศึกษาในทีมทุกคนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        } else {
-            $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล</div>';
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันและแจ้งเตือนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         }
-    } else {
-        $message = '<div class="alert alert-warning">กรุณาเลือกทีมที่แข่งขันให้ถูกต้องและไม่ซ้ำกัน</div>';
     }
 }
 
-// 3. แอดมินอัปเดตสถานะแมตช์การแข่งขัน
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_match_status'])) {
+// 3. แอดมินอัปเดตสถานะและคะแนนการแข่งขัน
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_match_details'])) {
     $match_id   = intval($_POST['match_id']);
     $new_status = trim($_POST['new_status']);
+    $t1_score   = isset($_POST['team1_score']) && $_POST['team1_score'] !== '' ? intval($_POST['team1_score']) : null;
+    $t2_score   = isset($_POST['team2_score']) && $_POST['team2_score'] !== '' ? intval($_POST['team2_score']) : null;
 
-    if ($match_id > 0 && !empty($new_status)) {
-        $stmt_up = $conn->prepare("UPDATE matches SET status = ? WHERE id = ?");
-        $stmt_up->bind_param("si", $new_status, $match_id);
+    if ($match_id > 0) {
+        $stmt_up = $conn->prepare("UPDATE matches SET status = ?, team1_score = ?, team2_score = ? WHERE id = ?");
+        $stmt_up->bind_param("siii", $new_status, $t1_score, $t2_score, $match_id);
         if ($stmt_up->execute()) {
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> อัปเดตสถานะการแข่งขันเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> อัปเดตสถานะและคะแนนการแข่งขันเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         }
     }
 }
@@ -233,10 +225,10 @@ $complaints = $conn->query($complaint_sql);
 
     <?= $message ?>
 
-    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน -->
+    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขันและใส่คะแนน -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-calendar-event-fill me-2"></i> จัดการตารางการแข่งขันกีฬา</h5>
+            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-calendar-event-fill me-2"></i> จัดการตารางการแข่งขัน & ใส่คะแนน</h5>
             <div class="d-flex gap-2">
                 <button class="btn btn-light btn-sm fw-bold text-success" data-bs-toggle="modal" data-bs-target="#createMatchModal">
                     <i class="bi bi-plus-circle-fill"></i> สร้างการแข่งขันใหม่
@@ -251,12 +243,12 @@ $complaints = $conn->query($complaint_sql);
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 15%;">ชนิดกีฬา</th>
-                            <th style="width: 30%; text-align: center;">คู่แข่งขัน (ทีม A VS ทีม B)</th>
-                            <th style="width: 18%;">เวลาการแข่งขัน</th>
+                            <th style="width: 12%;">ชนิดกีฬา</th>
+                            <th style="width: 28%; text-align: center;">คู่แข่งขัน & คะแนน (ทีม A - ทีม B)</th>
+                            <th style="width: 15%;">เวลาแข่งขัน</th>
                             <th style="width: 15%;">สนาม / สถานที่</th>
-                            <th style="width: 17%; text-align: center;">ปรับเปลี่ยนสถานะ</th>
-                            <th style="width: 5%; text-align: center;">จัดการ</th>
+                            <th style="width: 25%; text-align: center;">สถานะ & บันทึกคะแนน</th>
+                            <th style="width: 5%; text-align: center;">ลบ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -266,23 +258,34 @@ $complaints = $conn->query($complaint_sql);
                                     <td><span class="badge bg-primary fs-6"><?= htmlspecialchars($mc['sport_name']) ?></span></td>
                                     <td class="text-center fw-bold">
                                         <span class="text-primary"><?= htmlspecialchars($mc['team1_name']) ?></span>
-                                        <small class="text-muted opacity-75">(<?= htmlspecialchars($mc['team1_color']) ?>)</small>
-                                        <span class="mx-2 text-danger">VS</span>
+                                        <span class="mx-1 text-dark fs-5">[ <?= ($mc['team1_score'] !== null ? $mc['team1_score'] : '-') ?> ]</span>
+                                        <span class="mx-1 text-danger">VS</span>
+                                        <span class="text-dark fs-5">[ <?= ($mc['team2_score'] !== null ? $mc['team2_score'] : '-') ?> ]</span>
                                         <span class="text-primary"><?= htmlspecialchars($mc['team2_name']) ?></span>
-                                        <small class="text-muted opacity-75">(<?= htmlspecialchars($mc['team2_color']) ?>)</small>
                                     </td>
                                     <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= htmlspecialchars($mc['match_time']) ?></small></td>
                                     <td><small class="text-muted"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small></td>
                                     
+                                    <!-- ฟอร์มอัปเดตสถานะและคะแนน -->
                                     <td class="text-center">
-                                        <form method="POST" class="d-inline-block">
+                                        <form method="POST" class="p-1 bg-light border rounded">
                                             <input type="hidden" name="match_id" value="<?= $mc['id'] ?>">
-                                            <input type="hidden" name="update_match_status" value="1">
-                                            <select name="new_status" class="form-select form-select-sm fw-bold <?= $mc['status'] === 'live' ? 'border-danger text-danger' : ($mc['status'] === 'finished' ? 'border-success text-success' : 'border-warning text-dark') ?>" onchange="this.form.submit()">
-                                                <option value="upcoming" <?= $mc['status'] === 'upcoming' ? 'selected' : '' ?>>⏳ รอดำเนินการ</option>
-                                                <option value="live" <?= $mc['status'] === 'live' ? 'selected' : '' ?>>🔴 กำลังแข่งขัน (LIVE)</option>
-                                                <option value="finished" <?= $mc['status'] === 'finished' ? 'selected' : '' ?>>✅ แข่งเสร็จแล้ว</option>
-                                            </select>
+                                            <input type="hidden" name="update_match_details" value="1">
+                                            
+                                            <div class="d-flex justify-content-center align-items-center gap-1 mb-1">
+                                                <input type="number" name="team1_score" class="form-control form-control-sm text-center px-1" placeholder="ทีม A" value="<?= $mc['team1_score'] ?>" style="width: 50px;" min="0">
+                                                <span class="fw-bold">-</span>
+                                                <input type="number" name="team2_score" class="form-control form-control-sm text-center px-1" placeholder="ทีม B" value="<?= $mc['team2_score'] ?>" style="width: 50px;" min="0">
+                                            </div>
+
+                                            <div class="input-group input-group-sm">
+                                                <select name="new_status" class="form-select form-select-sm fw-bold <?= $mc['status'] === 'live' ? 'border-danger text-danger' : ($mc['status'] === 'finished' ? 'border-success text-success' : 'border-warning text-dark') ?>">
+                                                    <option value="upcoming" <?= $mc['status'] === 'upcoming' ? 'selected' : '' ?>>⏳ รอดำเนินการ</option>
+                                                    <option value="live" <?= $mc['status'] === 'live' ? 'selected' : '' ?>>🔴 LIVE</option>
+                                                    <option value="finished" <?= $mc['status'] === 'finished' ? 'selected' : '' ?>>✅ จบการแข่งขัน</option>
+                                                </select>
+                                                <button type="submit" class="btn btn-dark btn-sm" title="บันทึกคะแนนและสถานะ"><i class="bi bi-save-fill"></i></button>
+                                            </div>
                                         </form>
                                     </td>
 
@@ -376,7 +379,7 @@ $complaints = $conn->query($complaint_sql);
         </div>
     </div>
 
-    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหาพร้อมระบบตอบกลับต่อเนื่อง -->
+    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหาพร้อมระบบตอบกลับ -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fs-6">
@@ -438,7 +441,6 @@ $complaints = $conn->query($complaint_sql);
                                         <small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
                                     </td>
                                     <td>
-                                        <!-- กล่องแสดงประวัติการพิมพ์โต้ตอบทั้งหมด -->
                                         <div class="p-2 bg-white border rounded mb-2 shadow-sm" style="max-height: 160px; overflow-y: auto;">
                                             <?php
                                             $c_id = $cp['id'];
@@ -456,7 +458,6 @@ $complaints = $conn->query($complaint_sql);
                                             ?>
                                         </div>
 
-                                        <!-- ฟอร์มพิมพ์ข้อความตอบกลับต่อเนื่อง -->
                                         <form method="POST">
                                             <input type="hidden" name="complaint_id" value="<?= $cp['id'] ?>">
                                             <input type="hidden" name="student_user_id" value="<?= $cp['user_id'] ?>">
