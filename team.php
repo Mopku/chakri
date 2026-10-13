@@ -10,48 +10,68 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 $user_id = $_SESSION['user_id'];
 $message = '';
 
-// 1. จัดการสร้างทีมใหม่ (ยอมให้สีซ้ำได้ถ้าเป็นคนละประเภทกีฬา)
+// ตรวจสอบว่าตาราง teams มีคอลัมน์ sport_name หรือยัง
+$has_sport_col = false;
+$chk_col = $conn->query("SHOW COLUMNS FROM teams LIKE 'sport_name'");
+if ($chk_col && $chk_col->num_rows > 0) {
+    $has_sport_col = true;
+}
+
+// 1. จัดการสร้างทีมใหม่
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
     $team_color = trim($_POST['team_color']);
-    $sport_name = trim($_POST['sport_name']);
-    $logo_url   = trim($_POST['logo_url']);
+    $sport_name = trim($_POST['sport_name'] ?? '');
+    $logo_url   = '';
 
-    if (!empty($team_name) && !empty($team_color) && !empty($sport_name)) {
-        // 🔍 ตรวจสอบว่ามี [สีประจำทีม + ชนิดกีฬา] เดียวกันนี้ในระบบแล้วหรือยัง
-        $check_color_sport = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ? AND sport_name = ?");
-        $check_color_sport->bind_param("ss", $team_color, $sport_name);
-        $check_color_sport->execute();
-        $existing_team = $check_color_sport->get_result()->fetch_assoc();
+    // จัดการอัปโหลดไฟล์รูปภาพจากโทรศัพท์หรือคอมพิวเตอร์
+    if (isset($_FILES['logo_file']) && $_FILES['logo_file']['error'] === UPLOAD_ERR_OK) {
+        $file_tmp  = $_FILES['logo_file']['tmp_name'];
+        $file_type = mime_content_type($file_tmp);
+        
+        // ตรวจสอบว่าเป็นไฟล์รูปภาพจริงหรือไม่
+        if (strpos($file_type, 'image/') === 0) {
+            $file_data = file_get_contents($file_tmp);
+            // แปลงรูปภาพเป็น Base64 Data URL สำหรับเก็บลงตารางและแสดงผลทันที
+            $logo_url  = 'data:' . $file_type . ';base64,' . base64_encode($file_data);
+        }
+    }
+
+    if (!empty($team_name) && !empty($team_color)) {
+        if ($has_sport_col && !empty($sport_name)) {
+            $check_color = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ? AND sport_name = ?");
+            $check_color->bind_param("ss", $team_color, $sport_name);
+        } else {
+            $check_color = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ?");
+            $check_color->bind_param("s", $team_color);
+        }
+
+        $check_color->execute();
+        $existing_team = $check_color->get_result()->fetch_assoc();
 
         if ($existing_team) {
-            $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> ในกีฬาประเภท <strong>' . htmlspecialchars($sport_name) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_team['team_name']) . '" กรุณาเลือกสีอื่น</div>';
+            $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_team['team_name']) . '" กรุณาเลือกสีอื่น</div>';
         } else {
-            // 🔍 ตรวจสอบชื่อทีมซ้ำในประเภทกีฬาเดียวกัน
-            $check_name = $conn->prepare("SELECT id FROM teams WHERE team_name = ? AND sport_name = ?");
-            $check_name->bind_param("ss", $team_name, $sport_name);
-            $check_name->execute();
-
-            if ($check_name->get_result()->num_rows > 0) {
-                $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> ชื่อทีม "' . htmlspecialchars($team_name) . '" สำหรับกีฬาประเภทนี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น</div>';
-            } else {
+            if ($has_sport_col) {
                 $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, logo_url, leader_id) VALUES (?, ?, ?, ?, ?)");
                 $stmt->bind_param("ssssi", $team_name, $team_color, $sport_name, $logo_url, $user_id);
-                
-                if ($stmt->execute()) {
-                    $new_team_id = $stmt->insert_id;
-                    $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
-                    $stmt_m->bind_param("ii", $new_team_id, $user_id);
-                    $stmt_m->execute();
+            } else {
+                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
+                $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
+            }
+            
+            if ($stmt->execute()) {
+                $new_team_id = $stmt->insert_id;
+                $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
+                $stmt_m->bind_param("ii", $new_team_id, $user_id);
+                $stmt_m->execute();
 
-                    $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> สร้างทีมสำเร็จเรียบร้อยแล้ว!</div>';
-                    header("Location: student_dashboard.php");
-                    exit();
-                }
+                header("Location: student_dashboard.php");
+                exit();
             }
         }
     } else {
-        $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีม ชนิดกีฬา และเลือกสีทีมให้ครบถ้วน</div>';
+        $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีมและเลือกสีทีมให้ครบถ้วน</div>';
     }
 }
 
@@ -228,7 +248,7 @@ $other_students = $conn->query("
 
 // ดึงรายการคำเชิญเข้าทีมที่รอยืนยัน
 $pending_invites = $conn->query("
-    SELECT tm.id AS member_id, t.team_name, t.team_color, t.sport_name, u.fullname AS leader_name
+    SELECT tm.id AS member_id, t.team_name, t.team_color, u.fullname AS leader_name
     FROM team_members tm
     JOIN teams t ON tm.team_id = t.id
     JOIN users u ON t.leader_id = u.id
@@ -266,8 +286,7 @@ $pending_invites = $conn->query("
                 <?php while ($inv = $pending_invites->fetch_assoc()): ?>
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
                         <div>
-                            <strong><?= htmlspecialchars($inv['team_name']) ?></strong> 
-                            (<?= htmlspecialchars($inv['team_color']) ?> - <?= htmlspecialchars($inv['sport_name']) ?>)
+                            <strong><?= htmlspecialchars($inv['team_name']) ?></strong> (<?= htmlspecialchars($inv['team_color']) ?>)
                             <br><small class="text-muted">หัวหน้าทีม: <?= htmlspecialchars($inv['leader_name']) ?></small>
                         </div>
                         <div>
@@ -293,7 +312,9 @@ $pending_invites = $conn->query("
                 <?php endif; ?>
 
                 <h3 class="fw-bold mb-1"><?= htmlspecialchars($my_team['team_name']) ?></h3>
-                <span class="badge bg-primary text-white me-1"><?= htmlspecialchars($my_team['sport_name'] ?? 'กีฬา') ?></span>
+                <?php if (isset($my_team['sport_name'])): ?>
+                    <span class="badge bg-primary text-white me-1"><?= htmlspecialchars($my_team['sport_name']) ?></span>
+                <?php endif; ?>
                 <span class="badge bg-info text-dark mb-3"><?= htmlspecialchars($my_team['team_color']) ?></span>
                 <p class="small text-muted mb-2">หัวหน้าทีม: <?= htmlspecialchars($my_team['leader_name']) ?></p>
 
@@ -362,11 +383,11 @@ $pending_invites = $conn->query("
             </ul>
         </div>
 
-    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ (ปลดล็อกให้เลือกสีซ้ำข้ามชนิดกีฬาได้) -->
+    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ (รองรับการเลือกไฟล์รูปภาพจากโทรศัพท์/คอมพิวเตอร์) -->
     <?php else: ?>
         <div class="card shadow-sm border-0 p-4">
             <h5 class="fw-bold text-dark mb-3"><i class="bi bi-plus-circle-fill text-primary me-1"></i> คุณยังไม่มีทีม สร้างทีมใหม่</h5>
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label class="form-label fw-bold">ชื่อทีมกีฬา</label>
                     <input type="text" name="team_name" class="form-control" placeholder="เช่น สิงห์นครสวรรค์ FC" required>
@@ -396,12 +417,12 @@ $pending_invites = $conn->query("
                         <option value="🟠 ทีมสีแสด/ส้ม">🟠 ทีมสีแสด/ส้ม</option>
                         <option value="🟣 ทีมสีม่วง">🟣 ทีมสีม่วง</option>
                     </select>
-                    <small class="text-muted mt-1 d-block">* สามารถเลือกสีซ้ำกับกีฬาประเภทอื่นได้ (ห้ามสร้างทีมสีซ้ำในประเภทกีฬาเดียวกัน)</small>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">ลิงก์รูปโลโก้ทีม (URL รูปภาพ) - Optional</label>
-                    <input type="url" name="logo_url" class="form-control" placeholder="https://example.com/logo.png">
+                    <label class="form-label fw-bold"><i class="bi bi-image me-1"></i> เลือกรูปโลโก้ทีมจากเครื่อง / โทรศัพท์</label>
+                    <input type="file" name="logo_file" class="form-control" accept="image/*">
+                    <small class="text-muted d-block mt-1">* รองรับไฟล์รูปภาพ JPG, PNG, WEBP (ไม่บังคับ)</small>
                 </div>
 
                 <button type="submit" name="create_team" class="btn btn-primary w-100 fw-bold rounded-pill mt-2">
