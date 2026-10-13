@@ -18,13 +18,28 @@ $latest_matches = $conn->query("
     ORDER BY m.id DESC
 ");
 
-// จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
+// ดึงรายชื่อทีมทั้งหมดในระบบให้เลือกในฟอร์มแจ้งปัญหา
+$teams_dropdown = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+
+// จัดการการส่งข้อร้องเรียน/แจ้งปัญหา
 $complaint_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) {
     if ($is_logged_in) {
         $subject = trim($_POST['subject']);
+        $team_id = !empty($_POST['team_id']) ? intval($_POST['team_id']) : null;
         $message = trim($_POST['message']);
         $uid     = $_SESSION['user_id'] ?? 0;
+
+        // หากมีการเลือกทีม ให้นำชื่อทีมระบุเพิ่มเข้าไปในรายละเอียดข้อความ
+        if ($team_id) {
+            $stmt_t = $conn->prepare("SELECT team_name FROM teams WHERE id = ?");
+            $stmt_t->bind_param("i", $team_id);
+            $stmt_t->execute();
+            $res_t = $stmt_t->get_result();
+            if ($row_t = $res_t->fetch_assoc()) {
+                $message = "[เกี่ยวกับทีม: " . $row_t['team_name'] . "]\n" . $message;
+            }
+        }
 
         if (!empty($subject) && !empty($message)) {
             $stmt_c = $conn->prepare("INSERT INTO complaints (user_id, subject, message) VALUES (?, ?, ?)");
@@ -192,10 +207,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                         <label class="form-label fw-bold">หัวข้อเรื่อง</label>
                         <select name="subject" class="form-select" required>
                             <option value="สแกน QR Code ไม่ติด">สแกน QR Code ไม่ติด</option>
+                            <option value="แจ้งเหตุผลเกี่ยวกับทีมกีฬา">แจ้งเหตุผลเกี่ยวกับทีมกีฬา</option>
                             <option value="แจ้งเหตุผลการขาดกิจกรรม">แจ้งเหตุผลการขาดกิจกรรม</option>
                             <option value="อื่นๆ">อื่นๆ</option>
                         </select>
                     </div>
+
+                    <!-- ดร็อปดาวน์เลือกทีมกีฬาในระบบ -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">เลือกทีมกีฬาที่ต้องการแจ้งปัญหา (ถ้ามี)</label>
+                        <select name="team_id" class="form-select">
+                            <option value="">-- ไม่ระบุ / แจ้งปัญหาระบบทั่วไป --</option>
+                            <?php if ($teams_dropdown && $teams_dropdown->num_rows > 0): ?>
+                                <?php while ($tm = $teams_dropdown->fetch_assoc()): ?>
+                                    <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['team_name']) ?> (<?= htmlspecialchars($tm['team_color']) ?>)</option>
+                                <?php endwhile; ?>
+                            <?php endif; ?>
+                        </select>
+                    </div>
+
                     <div class="mb-3">
                         <label class="form-label fw-bold">รายละเอียด / เหตุผล</label>
                         <textarea name="message" class="form-control" rows="4" placeholder="พิมพ์รายละเอียดที่ต้องการแจ้งแอดมิน..." required></textarea>
