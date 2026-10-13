@@ -35,27 +35,6 @@ $team_stmt = $conn->prepare("
 $team_stmt->bind_param("i", $user_id);
 $team_stmt->execute();
 $my_team = $team_stmt->get_result()->fetch_assoc();
-
-// 3. คำนวณชั่วโมงสะสมรวม
-$sum_sql = "SELECT SUM(a.hours) AS total_hours 
-            FROM attendance att 
-            JOIN activities a ON att.activity_id = a.id 
-            WHERE att.user_id = ? AND att.status = 'attended'";
-$stmt = $conn->prepare($sum_sql);
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$total_hours = $stmt->get_result()->fetch_assoc()['total_hours'] ?? 0;
-
-// 4. ดึงประวัติกิจกรรมทั้งหมด
-$history_sql = "SELECT a.title, a.hours, att.checked_in_at, att.summary_text, att.score 
-                FROM attendance att 
-                JOIN activities a ON att.activity_id = a.id 
-                WHERE att.user_id = ? AND att.status = 'attended' 
-                ORDER BY att.checked_in_at DESC";
-$stmt_hist = $conn->prepare($history_sql);
-$stmt_hist->bind_param("i", $user_id);
-$stmt_hist->execute();
-$history_result = $stmt_hist->get_result();
 ?>
 
 <!DOCTYPE html>
@@ -108,8 +87,8 @@ $history_result = $stmt_hist->get_result();
     <?php endif; ?>
 
     <!-- 🛡️ การ์ดแสดงทีมกีฬาที่เราสังกัดอยู่ -->
-    <div class="card card-team p-3 mb-4 border border-secondary border-opacity-25">
-        <div class="d-flex align-items-center justify-content-between">
+    <div class="card card-team p-4 mb-4 border border-secondary border-opacity-25">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
                 <?php if ($my_team && !empty($my_team['logo_url'])): ?>
                     <img src="<?= htmlspecialchars($my_team['logo_url']) ?>" class="rounded-circle border" style="width: 60px; height: 60px; object-fit: cover;">
@@ -132,7 +111,7 @@ $history_result = $stmt_hist->get_result();
             </div>
 
             <div>
-                <a href="team.php" class="btn btn-warning fw-bold text-dark rounded-pill px-3 shadow-sm position-relative">
+                <a href="team.php" class="btn btn-warning fw-bold text-dark rounded-pill px-4 shadow-sm position-relative">
                     <i class="bi bi-people-fill me-1"></i> <?= $my_team ? 'ดู/จัดการทีมของคุณ' : 'สร้างทีมกีฬา' ?>
                     <?php if ($pending_count > 0): ?>
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
@@ -144,72 +123,11 @@ $history_result = $stmt_hist->get_result();
         </div>
     </div>
 
-    <!-- 🏆 การ์ดแสดงชั่วโมงรวม -->
-    <div class="card bg-primary text-white p-4 rounded-4 shadow-sm border-0 mb-4">
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="fw-bold mb-1"><i class="bi bi-trophy-fill text-warning me-2"></i> ชั่วโมงกิจกรรมสะสมทั้งหมด</h5>
-                <small class="opacity-75">รหัสนักศึกษา: <?= htmlspecialchars($student_id) ?></small>
-            </div>
-            <div class="text-end">
-                <span class="display-4 fw-bold text-warning"><?= $total_hours ?></span>
-                <span class="fs-5">ชม.</span>
-            </div>
-        </div>
-    </div>
-
     <!-- ปุ่มย้อนกลับไปหน้าตารางแข่งขัน -->
     <div class="d-flex justify-content-start mb-3">
         <a href="schedule_landing.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> ดูตารางแข่งขัน & LIVE
         </a>
-    </div>
-
-    <!-- 📋 ตารางประวัติกิจกรรม -->
-    <div class="card shadow-sm border-0 rounded-3">
-        <div class="card-header bg-white py-3 fw-bold">
-            <i class="bi bi-clock-history me-2"></i> ประวัติการเข้าร่วมกิจกรรม & คะแนนสรุปผล
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>วันที่เข้าร่วม</th>
-                            <th>ชื่อกิจกรรม</th>
-                            <th>ชั่วโมง</th>
-                            <th>สรุปผลกิจกรรม</th>
-                            <th>คะแนนจากแอดมิน</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($history_result && $history_result->num_rows > 0): ?>
-                            <?php while ($row = $history_result->fetch_assoc()): ?>
-                                <tr>
-                                    <td><small class="text-muted"><?= date('d/m/Y H:i', strtotime($row['checked_in_at'])) ?> น.</small></td>
-                                    <td><strong><?= htmlspecialchars($row['title']) ?></strong></td>
-                                    <td><span class="badge bg-success">+<?= $row['hours'] ?> ชม.</span></td>
-                                    <td>
-                                        <?php if (!empty($row['summary_text'])): ?>
-                                            <span class="badge bg-success-subtle text-success border border-success"><i class="bi bi-check-circle"></i> ส่งสรุปผลแล้ว</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary opacity-75">ยังไม่ส่งสรุปผล</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-primary px-3 py-2"><?= $row['score'] ?? 0 ?> / 100 คะแนน</span>
-                                    </td>
-                                </tr>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="5" class="text-center py-4 text-muted">ยังไม่มีประวัติการเข้าร่วมกิจกรรม</td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
 </div>

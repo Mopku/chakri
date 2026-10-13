@@ -4,37 +4,14 @@ require_once 'db.php';
 
 // ตรวจสอบสถานะการล็อกอิน
 $is_logged_in = isset($_SESSION['user_id']) && $_SESSION['role'] === 'student';
-$total_hours = 0;
 $student_name = '';
-$history_result = null;
 
 if ($is_logged_in) {
     $user_id = $_SESSION['user_id'];
     $student_name = $_SESSION['fullname'];
-
-    // 1. คำนวณชั่วโมงกิจกรรมสะสมรวม
-    $sum_sql = "SELECT SUM(a.hours) AS total_hours 
-                FROM attendance att 
-                JOIN activities a ON att.activity_id = a.id 
-                WHERE att.user_id = ? AND att.status = 'attended'";
-    $stmt = $conn->prepare($sum_sql);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $total_hours = $stmt->get_result()->fetch_assoc()['total_hours'] ?? 0;
-
-    // 2. ดึงประวัติกิจกรรม 3 รายการล่าสุด
-    $history_sql = "SELECT a.title, a.hours, att.checked_in_at 
-                    FROM attendance att 
-                    JOIN activities a ON att.activity_id = a.id 
-                    WHERE att.user_id = ? AND att.status = 'attended' 
-                    ORDER BY att.checked_in_at DESC LIMIT 3";
-    $stmt_hist = $conn->prepare($history_sql);
-    $stmt_hist->bind_param("i", $user_id);
-    $stmt_hist->execute();
-    $history_result = $stmt_hist->get_result();
 }
 
-// 3. ดึงรายการแข่งขันกีฬาล่าสุดที่แอดมินสร้างขึ้น
+// ดึงรายการแข่งขันกีฬาล่าสุดที่แอดมินสร้างขึ้น
 $latest_matches = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -45,7 +22,7 @@ $latest_matches = $conn->query("
     ORDER BY m.created_at DESC, m.id DESC
 ");
 
-// 4. จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
+// จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
 $complaint_msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) {
     if ($is_logged_in) {
@@ -73,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ตารางแข่งขัน & ระบบสะสมชั่วโมงกิจกรรม</title>
+    <title>ตารางแข่งขัน & ระบบกิจกรรม</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <style>
@@ -104,43 +81,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 <!-- Header Banner -->
 <div class="header-banner text-center shadow-sm mb-4">
     <span class="badge bg-light text-primary fw-bold mb-2"><i class="bi bi-trophy-fill"></i> กิจกรรมและตารางแข่งขัน</span>
-    <h3 class="fw-bold mb-1">ตารางการแข่งขัน & ชั่วโมงสะสม</h3>
+    <h3 class="fw-bold mb-1">ตารางการแข่งขันประจำวัน</h3>
     <p class="mb-0 opacity-75 small"><i class="bi bi-geo-alt-fill"></i> อาคารศูนย์กีฬา มหาวิทยาลัย</p>
 </div>
 
 <div class="container px-3" style="max-width: 900px;">
 
-    <!-- ส่วนที่ 1: แสดงสถานะผู้ใช้ / ชั่วโมงสะสม -->
+    <!-- แสดงชื่อผู้ใช้งานเมื่อเข้าสู่ระบบ -->
     <?php if ($is_logged_in): ?>
-        <div class="card card-custom bg-primary text-white mb-4 p-3 shadow-sm">
-            <div class="d-flex align-items-center justify-content-between">
-                <div>
-                    <small class="text-white-50"><i class="bi bi-person-fill"></i> <?= htmlspecialchars($student_name) ?></small>
-                    <h5 class="fw-bold mb-0">ชั่วโมงกิจกรรมสะสมรวม</h5>
-                </div>
-                <div class="text-end">
-                    <span class="display-5 fw-bold text-warning"><?= $total_hours ?></span>
-                    <span class="fs-6">ชม.</span>
-                </div>
-            </div>
-            
-            <?php if ($history_result && $history_result->num_rows > 0): ?>
-                <hr class="my-2 opacity-25">
-                <small class="text-white-50 mb-1 d-block"><i class="bi bi-clock-history"></i> กิจกรรมที่ได้รับชั่วโมงล่าสุด:</small>
-                <ul class="list-unstyled mb-0 small">
-                    <?php while ($row = $history_result->fetch_assoc()): ?>
-                        <li class="d-flex justify-content-between">
-                            <span><?= htmlspecialchars($row['title']) ?></span>
-                            <span class="badge bg-warning text-dark">+<?= $row['hours'] ?> ชม.</span>
-                        </li>
-                    <?php endwhile; ?>
-                </ul>
-            <?php endif; ?>
+        <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+            <span class="fw-bold text-primary"><i class="bi bi-person-circle me-1"></i> สวัสดี, <?= htmlspecialchars($student_name) ?></span>
+            <a href="student_dashboard.php" class="btn btn-outline-primary btn-sm rounded-pill">
+                <i class="bi bi-shield-fill me-1"></i> ดูทีมกีฬาของคุณ
+            </a>
         </div>
     <?php else: ?>
         <div class="card card-custom bg-warning bg-opacity-10 border-warning mb-4 p-3 text-center">
             <h6 class="fw-bold text-dark mb-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> ยังไม่ได้เข้าสู่ระบบ</h6>
-            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อดูข้อมูลชั่วโมงกิจกรรมสะสมของคุณ</p>
+            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อจัดการทีมและส่งข้อร้องเรียน</p>
             <a href="login.php" class="btn btn-warning btn-sm fw-bold">เข้าสู่ระบบ / สมัครสมาชิก</a>
         </div>
     <?php endif; ?>
@@ -150,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน -->
     <div class="card card-custom mb-4" id="match-schedule">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
-            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> ตารางการแข่งขันกีฬาประจำวัน</h6>
+            <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาประจำวัน</h6>
             <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE</span>
         </div>
         <div class="card-body p-2">
@@ -194,19 +152,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: ปุ่มกด Action (เอาปุ่มจัดการทีม/สร้างทีมออกแล้ว) -->
+    <!-- ส่วนที่ 3: ปุ่มกด Action -->
     <div class="d-grid gap-2 mb-4">
         <?php if ($is_logged_in): ?>
-            <a href="student_dashboard.php" class="btn btn-primary btn-lg rounded-pill shadow-sm fw-bold">
-                <i class="bi bi-person-badge-fill me-1"></i> ดูประวัติชั่วโมงสะสมแบบเต็ม
-            </a>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" data-bs-toggle="modal" data-bs-target="#complaintModal">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
         <?php else: ?>
-            <a href="login.php" class="btn btn-primary btn-lg rounded-pill shadow-sm fw-bold">
-                <i class="bi bi-person-badge-fill me-1"></i> เข้าสู่ระบบเพื่อดูประวัติชั่วโมงสะสม
-            </a>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" onclick="if(confirm('กรุณาเข้าสู่ระบบก่อนส่งข้อร้องเรียน/แจ้งปัญหา กด OK เพื่อไปหน้าล็อกอิน')) { window.location='login.php'; }">
                 <i class="bi bi-exclamation-diamond-fill me-1"></i> แจ้งปัญหา / ส่งข้อร้องเรียนถึงแอดมิน
             </button>
@@ -229,7 +181,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                         <label class="form-label fw-bold">หัวข้อเรื่อง</label>
                         <select name="subject" class="form-select" required>
                             <option value="สแกน QR Code ไม่ติด">สแกน QR Code ไม่ติด</option>
-                            <option value="ชั่วโมงกิจกรรมไม่ขึ้น/ไม่ครบ">ชั่วโมงกิจกรรมไม่ขึ้น / ไม่ครบ</option>
                             <option value="แจ้งเหตุผลการขาดกิจกรรม">แจ้งเหตุผลการขาดกิจกรรม</option>
                             <option value="อื่นๆ">อื่นๆ</option>
                         </select>
