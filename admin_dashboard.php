@@ -42,7 +42,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     }
 }
 
-// 3. แอดมินลบรายการแข่งขัน
+// 3. แอดมินอัปเดตสถานะแมตช์การแข่งขัน
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_match_status'])) {
+    $match_id   = intval($_POST['match_id']);
+    $new_status = trim($_POST['new_status']);
+
+    if ($match_id > 0 && !empty($new_status)) {
+        $stmt_up = $conn->prepare("UPDATE matches SET status = ? WHERE id = ?");
+        $stmt_up->bind_param("si", $new_status, $match_id);
+        if ($stmt_up->execute()) {
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> อัปเดตสถานะการแข่งขันเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+        }
+    }
+}
+
+// 4. แอดมินลบรายการแข่งขัน
 if (isset($_GET['delete_match'])) {
     $del_id = intval($_GET['delete_match']);
     $stmt_del = $conn->prepare("DELETE FROM matches WHERE id = ?");
@@ -124,7 +138,6 @@ $complaints = $conn->query("
                 <button class="btn btn-light btn-sm fw-bold text-success" data-bs-toggle="modal" data-bs-target="#createMatchModal">
                     <i class="bi bi-plus-circle-fill"></i> สร้างการแข่งขันใหม่
                 </button>
-                <!-- เอา target="_blank" ออกเพื่อให้รักษา Session -->
                 <a href="schedule_landing.php" class="btn btn-warning btn-sm fw-bold text-dark">
                     <i class="bi bi-eye-fill"></i> ดูตารางการแข่งขัน
                 </a>
@@ -136,10 +149,10 @@ $complaints = $conn->query("
                     <thead class="table-light">
                         <tr>
                             <th style="width: 15%;">ชนิดกีฬา</th>
-                            <th style="width: 35%; text-align: center;">คู่แข่งขัน (ทีม A VS ทีม B)</th>
-                            <th style="width: 20%;">เวลาการแข่งขัน</th>
+                            <th style="width: 30%; text-align: center;">คู่แข่งขัน (ทีม A VS ทีม B)</th>
+                            <th style="width: 18%;">เวลาการแข่งขัน</th>
                             <th style="width: 15%;">สนาม / สถานที่</th>
-                            <th style="width: 10%; text-align: center;">สถานะ</th>
+                            <th style="width: 17%; text-align: center;">ปรับเปลี่ยนสถานะ</th>
                             <th style="width: 5%; text-align: center;">จัดการ</th>
                         </tr>
                     </thead>
@@ -157,15 +170,20 @@ $complaints = $conn->query("
                                     </td>
                                     <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= htmlspecialchars($mc['match_time']) ?></small></td>
                                     <td><small class="text-muted"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small></td>
+                                    
+                                    <!-- ฟอร์มกดอัปเดตสถานะแมตช์ได้ทันที -->
                                     <td class="text-center">
-                                        <?php if ($mc['status'] === 'live'): ?>
-                                            <span class="badge bg-danger"><i class="bi bi-record-fill"></i>กำลังแข่งขัน</span>
-                                        <?php elseif ($mc['status'] === 'finished'): ?>
-                                            <span class="badge bg-success">แข่งเสร็จแล้ว</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary">รอดำเนินการ</span>
-                                        <?php endif; ?>
+                                        <form method="POST" class="d-inline-block">
+                                            <input type="hidden" name="match_id" value="<?= $mc['id'] ?>">
+                                            <input type="hidden" name="update_match_status" value="1">
+                                            <select name="new_status" class="form-select form-select-sm fw-bold <?= $mc['status'] === 'live' ? 'border-danger text-danger' : ($mc['status'] === 'finished' ? 'border-success text-success' : 'border-warning text-dark') ?>" onchange="this.form.submit()">
+                                                <option value="upcoming" <?= $mc['status'] === 'upcoming' ? 'selected' : '' ?>>⏳ รอดำเนินการ</option>
+                                                <option value="live" <?= $mc['status'] === 'live' ? 'selected' : '' ?>>🔴 กำลังแข่งขัน (LIVE)</option>
+                                                <option value="finished" <?= $mc['status'] === 'finished' ? 'selected' : '' ?>>✅ แข่งเสร็จแล้ว</option>
+                                            </select>
+                                        </form>
                                     </td>
+
                                     <td class="text-center">
                                         <a href="admin_dashboard.php?delete_match=<?= $mc['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('ยืนยันลบตารางการแข่งขันนี้?');">
                                             <i class="bi bi-trash-fill"></i>
@@ -337,10 +355,10 @@ $complaints = $conn->query("
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-bold">สถานะแมตช์</label>
+                        <label class="form-label fw-bold">สถานะแมตช์เริ่มต้น</label>
                         <select name="status" class="form-select" required>
-                            <option value="live">🔴 กำลังแข่งขัน (LIVE)</option>
                             <option value="upcoming" selected>⏳ รอดำเนินการ</option>
+                            <option value="live">🔴 กำลังแข่งขัน (LIVE)</option>
                             <option value="finished">✅ แข่งเสร็จแล้ว</option>
                         </select>
                     </div>
