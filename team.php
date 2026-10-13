@@ -10,26 +10,48 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 $user_id = $_SESSION['user_id'];
 $message = '';
 
-// 1. จัดการสร้างทีมใหม่
+// 1. จัดการสร้างทีมใหม่ (เช็กสีทีมซ้ำ และชื่อทีมซ้ำ)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
     $team_color = trim($_POST['team_color']);
     $logo_url   = trim($_POST['logo_url']); // ลิงก์ URL รูปโลโก้
 
     if (!empty($team_name) && !empty($team_color)) {
-        // สร้างทีมใหม่
-        $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
-        $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
         
-        if ($stmt->execute()) {
-            $new_team_id = $stmt->insert_id;
-            // บันทึกหัวหน้าทีมเข้าเป็นสมาชิกร่วมทีมทันที (status = accepted)
-            $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
-            $stmt_m->bind_param("ii", $new_team_id, $user_id);
-            $stmt_m->execute();
+        // 🔍 ตรวจสอบว่ามีสีประจำทีมนี้ถูกใช้งานไปแล้วหรือไม่
+        $check_color = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ?");
+        $check_color->bind_param("s", $team_color);
+        $check_color->execute();
+        $existing_color = $check_color->get_result()->fetch_assoc();
 
-            $message = '<div class="alert alert-success">สร้างทีมสำเร็จเรียบร้อยแล้ว!</div>';
+        if ($existing_color) {
+            $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_color['team_name']) . '" กรุณาเลือกสีอื่น</div>';
+        } else {
+            // 🔍 ตรวจสอบว่าชื่อทีมซ้ำหรือไม่
+            $check_name = $conn->prepare("SELECT id FROM teams WHERE team_name = ?");
+            $check_name->bind_param("s", $team_name);
+            $check_name->execute();
+
+            if ($check_name->get_result()->num_rows > 0) {
+                $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> ชื่อทีม "' . htmlspecialchars($team_name) . '" นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น</div>';
+            } else {
+                // บันทึกสร้างทีมใหม่
+                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
+                $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
+                
+                if ($stmt->execute()) {
+                    $new_team_id = $stmt->insert_id;
+                    // บันทึกหัวหน้าทีมเข้าเป็นสมาชิกร่วมทีมทันที (status = accepted)
+                    $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
+                    $stmt_m->bind_param("ii", $new_team_id, $user_id);
+                    $stmt_m->execute();
+
+                    $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> สร้างทีมสำเร็จเรียบร้อยแล้ว!</div>';
+                }
+            }
         }
+    } else {
+        $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีมและเลือกสีทีมให้ครบถ้วน</div>';
     }
 }
 
@@ -39,7 +61,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['invite_student'])) {
     $my_team_id      = intval($_POST['team_id']);
 
     if ($invited_user_id > 0 && $my_team_id > 0) {
-        // ตรวจสอบว่าเชิญซ้ำหรือไม่
         $check = $conn->prepare("SELECT id FROM team_members WHERE team_id = ? AND user_id = ?");
         $check->bind_param("ii", $my_team_id, $invited_user_id);
         $check->execute();
@@ -48,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['invite_student'])) {
             $stmt_inv = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'pending')");
             $stmt_inv->bind_param("ii", $my_team_id, $invited_user_id);
             $stmt_inv->execute();
-            $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> ส่งคำเชิญเข้าร่วมทีมเรียบร้อยแล้ว! เพื่อนสามารถกดตอบรับในระบบได้ทันที</div>';
+            $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> ส่งคำเชิญเข้าร่วมทีมเรียบร้อยแล้ว!</div>';
         } else {
             $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> นักศึกษาคนนี้อยู่ในทีมหรือถูกเชิญไปแล้ว</div>';
         }
@@ -94,6 +115,15 @@ if ($my_team) {
     $m_stmt->bind_param("i", $my_team['id']);
     $m_stmt->execute();
     $team_members_list = $m_stmt->get_result();
+}
+
+// ดึงรายการสีทีมที่ถูกใช้ไปแล้ว (ใช้ปิดตัวเลือกสีที่ถูกเลือกไปแล้วใน Dropdown)
+$used_colors = [];
+$color_res = $conn->query("SELECT team_color FROM teams");
+if ($color_res) {
+    while ($c = $color_res->fetch_assoc()) {
+        $used_colors[] = $c['team_color'];
+    }
 }
 
 // ดึงรายชื่อนักศึกษาคนอื่นที่ยังไม่มีทีม (สำหรับค้นหาชวนเข้าทีม)
@@ -215,15 +245,26 @@ $pending_invites = $conn->query("
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">เลือกสีประจำทีม</label>
+                    <label class="form-label fw-bold">เลือกสีประจำทีม (เลือกได้เฉพาะสีที่ยังไม่มีทีมสร้าง)</label>
                     <select name="team_color" class="form-select" required>
                         <option value="">-- เลือกสีประจำทีม --</option>
-                        <option value="🔴 ทีมสีแดง">🔴 ทีมสีแดง</option>
-                        <option value="🔵 ทีมสีน้ำเงิน">🔵 ทีมสีน้ำเงิน</option>
-                        <option value="🟡 ทีมสีเหลือง">🟡 ทีมสีเหลือง</option>
-                        <option value="🟢 ทีมสีเขียว">🟢 ทีมสีเขียว</option>
-                        <option value="🟠 ทีมสีแสด/ส้ม">🟠 ทีมสีแสด/ส้ม</option>
-                        <option value="🟣 ทีมสีม่วง">🟣 ทีมสีม่วง</option>
+                        <?php 
+                            $all_colors = [
+                                "🔴 ทีมสีแดง" => "🔴 ทีมสีแดง",
+                                "🔵 ทีมสีน้ำเงิน" => "🔵 ทีมสีน้ำเงิน",
+                                "🟡 ทีมสีเหลือง" => "🟡 ทีมสีเหลือง",
+                                "🟢 ทีมสีเขียว" => "🟢 ทีมสีเขียว",
+                                "🟠 ทีมสีแสด/ส้ม" => "🟠 ทีมสีแสด/ส้ม",
+                                "🟣 ทีมสีม่วง" => "🟣 ทีมสีม่วง"
+                            ];
+
+                            foreach ($all_colors as $key => $val) {
+                                $is_used = in_array($key, $used_colors);
+                                $disabled = $is_used ? 'disabled' : '';
+                                $label_text = $is_used ? $val . ' (มีผู้เลือกแล้ว)' : $val;
+                                echo "<option value=\"$key\" $disabled>$label_text</option>";
+                            }
+                        ?>
                     </select>
                 </div>
 
