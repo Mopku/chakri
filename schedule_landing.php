@@ -119,9 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
     <!-- ตารางการแข่งขันประจำวัน -->
     <div class="card card-custom mb-4" id="match-schedule">
-        <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
+        <div class="card-header bg-white border-0 pt-3 px-3">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาประจำวัน</h6>
-            <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE / MATCHES</span>
         </div>
         <div class="card-body p-2">
             
