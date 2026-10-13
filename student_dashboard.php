@@ -14,7 +14,7 @@ $student_id = $_SESSION['student_id'] ?? '-';
 $message = '';
 
 // =========================================================
-// 📌 ระบบตรวจสอบและสร้างตาราง notifications อัตโนมัติ
+// 📌 ระบบตรวจสอบและสร้างตาราง notifications และ complaint_replies อัตโนมัติ
 // =========================================================
 $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -23,6 +23,38 @@ $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     is_read TINYINT(1) DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+
+$conn->query("CREATE TABLE IF NOT EXISTS complaint_replies (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    complaint_id INT NOT NULL,
+    sender_type ENUM('student', 'admin') NOT NULL,
+    sender_id INT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
+
+// =========================================================
+// 📌 ระบบนักศึกษาพิมพ์ข้อความตอบกลับแอดมิน
+// =========================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint_student'])) {
+    $complaint_id = intval($_POST['complaint_id']);
+    $student_reply = trim($_POST['student_reply']);
+
+    if ($complaint_id > 0 && !empty($student_reply)) {
+        // ตรวจสอบว่าเป็นเจ้าของเรื่องจริงไหม
+        $chk_own = $conn->prepare("SELECT id FROM complaints WHERE id = ? AND user_id = ?");
+        $chk_own->bind_param("ii", $complaint_id, $user_id);
+        $chk_own->execute();
+        if ($chk_own->get_result()->num_rows > 0) {
+            // บันทึกข้อความลงตาราง complaint_replies
+            $stmt_ins = $conn->prepare("INSERT INTO complaint_replies (complaint_id, sender_type, sender_id, message) VALUES (?, 'student', ?, ?)");
+            $stmt_ins->bind_param("iis", $complaint_id, $user_id, $student_reply);
+            if ($stmt_ins->execute()) {
+                $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> ส่งข้อความหาส่งแอดมินเรียบร้อยแล้ว <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+            }
+        }
+    }
+}
 
 // =========================================================
 // 📌 ระบบจัดการการแจ้งเตือน (กดรับทราบเพื่อให้ข้อความหายไป)
@@ -226,8 +258,8 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 40%;">หัวข้อ / รายละเอียดที่คุณแจ้ง</th>
-                            <th style="width: 60%;">ประวัติการสนทนากับแอดมิน</th>
+                            <th style="width: 35%;">หัวข้อ / รายละเอียดที่คุณแจ้ง</th>
+                            <th style="width: 65%;">ประวัติการสนทนาและการตอบกลับ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -239,11 +271,12 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
                             <tr>
                                 <td>
                                     <span class="badge bg-warning text-dark mb-1"><?= htmlspecialchars($mc['subject']) ?></span>
-                                    <div class="p-2 bg-light rounded border small"><?= nl2br(htmlspecialchars($mc['message'])) ?></div>
+                                    <div class="p-2 bg-light rounded border small mb-1"><?= nl2br(htmlspecialchars($mc['message'])) ?></div>
                                     <small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($mc['created_at'])) ?> น.</small>
                                 </td>
                                 <td>
-                                    <div class="p-2 bg-white border rounded shadow-sm" style="max-height: 160px; overflow-y: auto;">
+                                    <!-- กล่องแสดงประวัติแชทโต้ตอบ -->
+                                    <div class="p-2 bg-white border rounded shadow-sm mb-2" style="max-height: 180px; overflow-y: auto;">
                                         <?php 
                                         $comp_id = $mc['id'];
                                         $chat_logs = $conn->query("SELECT * FROM complaint_replies WHERE complaint_id = $comp_id ORDER BY created_at ASC");
@@ -255,7 +288,6 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
                                                 echo '<div class="p-1.5 mb-1 border rounded small ' . $box_style . '"><strong>' . $who . ':</strong> ' . htmlspecialchars($log['message']) . '<br><span class="text-muted" style="font-size:10px;">' . $log['created_at'] . '</span></div>';
                                             }
                                         } else {
-                                            // หากยังไม่มีประวัติในตารางย่อย ให้แสดงข้อความล่าสุดจากฟิลด์ admin_reply (รองรับข้อมูลเก่า)
                                             if (!empty($mc['admin_reply'])) {
                                                 echo '<div class="p-1.5 mb-1 border rounded small bg-success bg-opacity-10 border-success text-success"><strong>🛡️ แอดมิน:</strong> ' . htmlspecialchars($mc['admin_reply']) . '</div>';
                                             } else {
@@ -264,6 +296,15 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
                                         }
                                         ?>
                                     </div>
+
+                                    <!-- ฟอร์มนักศึกษาพิมพ์ข้อความตอบกลับแอดมิน -->
+                                    <form method="POST">
+                                        <input type="hidden" name="complaint_id" value="<?= $mc['id'] ?>">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" name="student_reply" class="form-control" placeholder="พิมพ์ข้อความตอบกลับแอดมิน..." required>
+                                            <button type="submit" name="reply_complaint_student" class="btn btn-primary"><i class="bi bi-send-fill"></i> ส่ง</button>
+                                        </div>
+                                    </form>
                                 </td>
                             </tr>
                         <?php 
