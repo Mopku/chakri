@@ -52,36 +52,6 @@ if (isset($_GET['delete_match'])) {
     exit();
 }
 
-// 4. แอดมินเพิ่มรายการเข้าร่วมกิจกรรมใหม่ให้นักศึกษา
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_attendance'])) {
-    $user_id       = intval($_POST['user_id']);
-    $activity_id   = intval($_POST['activity_id']);
-    $checked_in_at = $_POST['checked_in_at'];
-    $score         = intval($_POST['score']);
-
-    if ($user_id > 0 && $activity_id > 0 && !empty($checked_in_at)) {
-        $stmt_add = $conn->prepare("INSERT INTO attendance (user_id, activity_id, status, checked_in_at, score, graded_at) VALUES (?, ?, 'attended', ?, ?, NOW())");
-        $stmt_add->bind_param("iisi", $user_id, $activity_id, $checked_in_at, $score);
-        if ($stmt_add->execute()) {
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> เพิ่มการเข้าร่วมกิจกรรมและคะแนนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-        }
-    }
-}
-
-// 5. แอดมินอัปเดตคะแนน/เวลา
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance'])) {
-    $attendance_id = intval($_POST['attendance_id']);
-    $score         = intval($_POST['score']);
-    $checked_in_at = $_POST['checked_in_at'];
-
-    if (!empty($checked_in_at)) {
-        $stmt_u = $conn->prepare("UPDATE attendance SET score = ?, checked_in_at = ?, graded_at = NOW() WHERE id = ?");
-        $stmt_u->bind_param("isi", $score, $checked_in_at, $attendance_id);
-        $stmt_u->execute();
-        $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> บันทึกคะแนนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
-    }
-}
-
 // ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์เลือกแมตช์แข่ง
 $all_teams_dropdown = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
 $all_teams_dropdown2 = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
@@ -112,18 +82,7 @@ if (!empty($search_team)) {
 $team_query .= " ORDER BY t.created_at DESC";
 $teams_list = $conn->query($team_query);
 
-// ดึงข้อมูลอื่นๆ
-$students_list = $conn->query("SELECT id, fullname, student_id FROM users WHERE role = 'student' ORDER BY fullname ASC");
-$activities_list = $conn->query("SELECT id, title FROM activities ORDER BY title ASC");
-$activities = $conn->query("SELECT id, title, description, hours, qr_token FROM activities ORDER BY title ASC");
-$attendances = $conn->query("
-    SELECT att.id AS attendance_id, att.checked_in_at, att.summary_text, att.score, 
-           u.fullname, u.student_id, a.title AS activity_title, a.hours AS default_hours
-    FROM attendance att
-    JOIN users u ON att.user_id = u.id
-    JOIN activities a ON att.activity_id = a.id
-    ORDER BY att.checked_in_at DESC
-");
+// ดึงรายการแจ้งปัญหา / ข้อร้องเรียน
 $complaints = $conn->query("
     SELECT c.*, u.fullname, u.student_id 
     FROM complaints c 
@@ -226,7 +185,7 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
         </div>
     </div>
 
-    <!-- 🏆 ส่วนที่ 2: ทีมกีฬาที่สร้างขึ้นในระบบ + ปุ่มลบทีมโดยแอดมิน -->
+    <!-- 🏆 ส่วนที่ 2: ทีมกีฬาที่สร้างขึ้นในระบบ -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-warning text-dark py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fw-bold">
@@ -292,50 +251,7 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: จัดการคะแนน & เวลาเข้าร่วมกิจกรรม -->
-    <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header bg-primary text-white py-3 d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-person-check-fill me-2"></i> จัดการคะแนน & เวลาเข้าร่วมกิจกรรม</h5>
-            <button class="btn btn-light btn-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addAttendanceModal">
-                <i class="bi bi-plus-circle-fill text-primary"></i> เพิ่มเข้าร่วมกิจกรรมใหม่
-            </button>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>นักศึกษา</th>
-                            <th>กิจกรรม</th>
-                            <th>สรุปผล</th>
-                            <th>เวลาเข้าร่วม</th>
-                            <th>คะแนน (100)</th>
-                            <th class="text-center">จัดการ</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if ($attendances && $attendances->num_rows > 0): ?>
-                            <?php while ($row = $attendances->fetch_assoc()): ?>
-                                <tr>
-                                    <td><strong><?= htmlspecialchars($row['fullname']) ?></strong><br><small class="text-muted">รหัส: <?= htmlspecialchars($row['student_id'] ?: '-') ?></small></td>
-                                    <td><span class="badge bg-primary mb-1"><?= htmlspecialchars($row['activity_title']) ?></span><br><small class="text-muted">+<?= $row['default_hours'] ?> ชม.</small></td>
-                                    <td><?= !empty($row['summary_text']) ? '<small class="d-block text-dark bg-white p-2 border rounded">' . nl2br(htmlspecialchars($row['summary_text'])) . '</small>' : '<span class="badge bg-secondary opacity-75">ยังไม่ส่งสรุปผล</span>' ?></td>
-                                    <form method="POST">
-                                        <input type="hidden" name="attendance_id" value="<?= $row['attendance_id'] ?>">
-                                        <td><input type="datetime-local" name="checked_in_at" class="form-control form-control-sm" value="<?= $row['checked_in_at'] ? date('Y-m-d\TH:i', strtotime($row['checked_in_at'])) : '' ?>" required></td>
-                                        <td><input type="number" name="score" class="form-control form-control-sm text-center" min="0" max="100" value="<?= $row['score'] ?>" required></td>
-                                        <td class="text-center"><button type="submit" name="update_attendance" class="btn btn-sm btn-success w-100"><i class="bi bi-save-fill"></i> บันทึก</button></td>
-                                    </form>
-                                </tr>
-                            <?php endwhile; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- ส่วนที่ 4: รายการแจ้งปัญหา / ข้อร้องเรียน -->
+    <!-- ส่วนที่ 3: รายการแจ้งปัญหา / ข้อร้องเรียน -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0 fs-6"><i class="bi bi-chat-square-text-fill me-2"></i> รายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา</h5>
@@ -457,56 +373,6 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
             <div class="modal-footer justify-content-center">
                 <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Modal สำหรับเพิ่มรายการเข้าร่วมกิจกรรมใหม่ -->
-<div class="modal fade" id="addAttendanceModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title fw-bold"><i class="bi bi-plus-circle"></i> เพิ่มการเข้าร่วมกิจกรรมให้นักศึกษา</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">เลือกนักศึกษา</label>
-                        <select name="user_id" class="form-select" required>
-                            <option value="">-- เลือกนักศึกษา --</option>
-                            <?php if ($students_list): ?>
-                                <?php while ($st = $students_list->fetch_assoc()): ?>
-                                    <option value="<?= $st['id'] ?>"><?= htmlspecialchars($st['fullname']) ?> (รหัส: <?= htmlspecialchars($st['student_id'] ?: '-') ?>)</option>
-                                <?php endwhile; ?>
-                            <?php endif; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">เลือกกิจกรรม</label>
-                        <select name="activity_id" class="form-select" required>
-                            <option value="">-- เลือกกิจกรรม --</option>
-                            <?php if ($activities_list): ?>
-                                <?php while ($act = $activities_list->fetch_assoc()): ?>
-                                    <option value="<?= $act['id'] ?>"><?= htmlspecialchars($act['title']) ?></option>
-                                <?php endwhile; ?>
-                            <?php endif; ?>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">วันที่และเวลาเข้าร่วม</label>
-                        <input type="datetime-local" name="checked_in_at" class="form-control" value="<?= date('Y-m-d\TH:i') ?>" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">คะแนน (0-100)</label>
-                        <input type="number" name="score" class="form-control" min="0" max="100" value="0" required>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-                    <button type="submit" name="add_attendance" class="btn btn-primary"><i class="bi bi-check-lg"></i> บันทึกข้อมูล</button>
-                </div>
-            </form>
         </div>
     </div>
 </div>

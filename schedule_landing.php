@@ -11,7 +11,7 @@ if ($is_logged_in) {
     $student_name = $_SESSION['fullname'];
 }
 
-// ดึงรายการแข่งขันกีฬาล่าสุดที่แอดมินสร้างขึ้น
+// ดึงรายการแข่งขันกีฬาทั้งหมดที่แอดมินสร้างขึ้น (ดึงจากแมตช์ใหม่ล่าสุดก่อน)
 $latest_matches = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -19,7 +19,7 @@ $latest_matches = $conn->query("
     FROM matches m
     JOIN teams t1 ON m.team1_id = t1.id
     JOIN teams t2 ON m.team2_id = t2.id
-    ORDER BY m.created_at DESC, m.id DESC
+    ORDER BY m.id DESC
 ");
 
 // จัดการการส่งข้อร้องเรียน/แจ้งเหตุผล
@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     <div class="card card-custom mb-4" id="match-schedule">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาประจำวัน</h6>
-            <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE</span>
+            <span class="badge bg-danger"><i class="bi bi-record-fill"></i> LIVE / MATCHES</span>
         </div>
         <div class="card-body p-2">
             
@@ -126,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                             <?php elseif ($mc['status'] === 'finished'): ?>
                                 <span class="badge bg-success badge-status">แข่งเสร็จแล้ว</span>
                             <?php else: ?>
-                                <span class="badge bg-secondary badge-status">รอดำเนินการ</span>
+                                <span class="badge bg-warning text-dark badge-status"><i class="bi bi-clock-history"></i> รอดำเนินการ</span>
                             <?php endif; ?>
                         </div>
                         <div class="row text-center fw-bold align-items-center my-2">
