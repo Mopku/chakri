@@ -14,6 +14,17 @@ $student_id = $_SESSION['student_id'] ?? '-';
 $message = '';
 
 // =========================================================
+// 📌 ระบบตรวจสอบและสร้างตาราง notifications อัตโนมัติ (ป้องกัน Error 500)
+// =========================================================
+$conn->query("CREATE TABLE IF NOT EXISTS notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    message TEXT NOT NULL,
+    is_read TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
+
+// =========================================================
 // 📌 ระบบจัดการการแจ้งเตือน (กดรับทราบเพื่อให้ข้อความหายไป)
 // =========================================================
 if (isset($_GET['read_noti'])) {
@@ -24,32 +35,36 @@ if (isset($_GET['read_noti'])) {
 }
 
 // ดึงข้อความแจ้งเตือนใหม่ที่ยังไม่ได้อ่าน
-$notifications_list = $conn->query("SELECT * FROM notifications WHERE user_id = $user_id AND is_read = 0 ORDER BY created_at DESC");
-$noti_count = $notifications_list ? $notifications_list->num_rows : 0;
+$notifications_list = null;
+$noti_count = 0;
+try {
+    $notifications_list = $conn->query("SELECT * FROM notifications WHERE user_id = $user_id AND is_read = 0 ORDER BY created_at DESC");
+    if ($notifications_list) {
+        $noti_count = $notifications_list->num_rows;
+    }
+} catch (Exception $e) {
+    $noti_count = 0;
+}
 
 // =========================================================
 // 📌 ระบบประมวลผลการสร้างทีมกีฬาใหม่
 // =========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
-    $team_name  = trim($_POST['team_name']);  // ชื่อทีม หรือ สีประจำทีม (เช่น สีฟ้า)
-    $sport_name = trim($_POST['sport_name']); // ชนิดกีฬา (เช่น E-Sports, บาสเกตบอล)
+    $team_name  = trim($_POST['team_name']);  
+    $sport_name = trim($_POST['sport_name']); 
 
     if (!empty($team_name) && !empty($sport_name)) {
-        // 1. ตรวจสอบก่อนว่า มีทีมชื่อนี้ + ลงแข่งกีฬาชนิดนี้ ไปแล้วหรือยัง
         $stmt_check = $conn->prepare("SELECT id FROM teams WHERE team_name = ? AND sport_name = ?");
         $stmt_check->bind_param("ss", $team_name, $sport_name);
         $stmt_check->execute();
         $res_check = $stmt_check->get_result();
 
         if ($res_check->num_rows > 0) {
-            // ❌ ถ้าซ้ำทั้ง ชื่อทีม/สี + ชนิดกีฬา เดียวกัน
             $message = '<div class="alert alert-danger alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle-fill me-1"></i> ไม่สามารถสร้างได้! ทีม <strong>' . htmlspecialchars($team_name) . '</strong> ในประเภทกีฬา <strong>' . htmlspecialchars($sport_name) . '</strong> มีอยู่ในระบบแล้ว
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>';
         } else {
-            // ✅ ถ้าไม่ซ้ำ -> สร้างทีมใหม่
-            // กำหนดให้ team_color ใช้ค่าเดียวกับ team_name หรือรับแยกตามฟอร์ม
             $team_color = $team_name; 
 
             $stmt_ins = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, leader_id) VALUES (?, ?, ?, ?)");
@@ -58,7 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
             if ($stmt_ins->execute()) {
                 $new_team_id = $stmt_ins->insert_id;
 
-                // 2. เพิ่มหัวหน้าทีมเข้าไปในตาราง team_members โดยอัตโนมัติ (สถานะ accepted)
                 $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
                 $stmt_m->bind_param("ii", $new_team_id, $user_id);
                 $stmt_m->execute();
@@ -72,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     }
 }
 
-// 1. ดึงข้อมูลคำเชิญเข้าทีมที่ยังไม่ได้ตอบรับ (Pending Invites Notification)
+// 1. ดึงข้อมูลคำเชิญเข้าทีมที่ยังไม่ได้ตอบรับ
 $pending_invites = $conn->query("
     SELECT tm.id AS member_id, t.team_name, t.team_color, u.fullname AS leader_name
     FROM team_members tm
@@ -82,7 +96,7 @@ $pending_invites = $conn->query("
 ");
 $pending_count = $pending_invites ? $pending_invites->num_rows : 0;
 
-// 2. ดึงข้อมูลทีมที่ผู้ใช้เป็นสมาชิกอยู่ (Accepted Team)
+// 2. ดึงข้อมูลทีมที่ผู้ใช้เป็นสมาชิกอยู่
 $my_team = null;
 $team_stmt = $conn->prepare("
     SELECT t.*, u.fullname AS leader_name,
@@ -129,11 +143,10 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
 
 <div class="container my-4" style="max-width: 900px;">
 
-    <!-- 📢 แสดงข้อความแจ้งเตือน (จากระบบ Error/Success สร้างทีม) -->
     <?= $message ?>
 
     <!-- 🔔 การแจ้งเตือนจากแอดมิน (สร้างตารางแข่งขัน) -->
-    <?php if ($noti_count > 0): ?>
+    <?php if ($noti_count > 0 && $notifications_list): ?>
         <?php while ($noti = $notifications_list->fetch_assoc()): ?>
             <div class="alert alert-info d-flex align-items-center shadow-sm border-2 border-info mb-4">
                 <i class="bi bi-info-circle-fill text-info fs-2 me-3"></i>
