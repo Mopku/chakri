@@ -11,20 +11,36 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 $message = '';
 
 // =========================================================
-// 📌 ระบบแอดมินตอบกลับปัญหา/ข้อร้องเรียน
+// 📌 ระบบแอดมินตอบกลับปัญหาและบันทึกประวัติการพิมพ์
 // =========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
     $complaint_id = intval($_POST['complaint_id']);
     $student_user_id = intval($_POST['student_user_id']);
     $reply_text = trim($_POST['admin_reply']);
+    $admin_id = $_SESSION['user_id'];
 
     if ($complaint_id > 0 && !empty($reply_text)) {
-        // อัปเดตข้อความตอบกลับลงในฐานข้อมูล complaints
-        $stmt_rep = $conn->prepare("UPDATE complaints SET admin_reply = ? WHERE id = ?");
-        $stmt_rep->bind_param("si", $reply_text, $complaint_id);
+        // 1. สร้างตารางเก็บประวัติการสนทนาอัตโนมัติ (เผื่อยังไม่มี)
+        $conn->query("CREATE TABLE IF NOT EXISTS complaint_replies (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            complaint_id INT NOT NULL,
+            sender_type ENUM('student', 'admin') NOT NULL,
+            sender_id INT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
+
+        // 2. บันทึกข้อความตอบกลับของแอดมินลงใน complaint_replies
+        $stmt_rep = $conn->prepare("INSERT INTO complaint_replies (complaint_id, sender_type, sender_id, message) VALUES (?, 'admin', ?, ?)");
+        $stmt_rep->bind_param("iis", $complaint_id, $admin_id, $reply_text);
         
         if ($stmt_rep->execute()) {
-            // สร้างตาราง notifications อัตโนมัติเผื่อยังไม่มี
+            // 3. อัปเดตข้อความล่าสุดลงในตาราง complaints ด้วย
+            $stmt_up = $conn->prepare("UPDATE complaints SET admin_reply = ? WHERE id = ?");
+            $stmt_up->bind_param("si", $reply_text, $complaint_id);
+            $stmt_up->execute();
+
+            // 4. สร้างตารางแจ้งเตือนและส่งแจ้งเตือนหานักศึกษา
             $conn->query("CREATE TABLE IF NOT EXISTS notifications (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -33,13 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )");
 
-            // ส่งแจ้งเตือนตรงไปหานักศึกษาเจ้าของปัญหา
-            $noti_msg = "💬 แอดมินได้ตอบกลับข้อร้องเรียนของคุณแล้ว: \"{$reply_text}\"";
+            $noti_msg = "💬 แอดมินตอบกลับข้อร้องเรียนของคุณแล้ว: \"{$reply_text}\"";
             $stmt_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
             $stmt_notif->bind_param("is", $student_user_id, $noti_msg);
             $stmt_notif->execute();
 
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> ส่งข้อความตอบกลับให้นักศึกษาเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> บันทึกและส่งข้อความตอบกลับให้นักศึกษาเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         } else {
             $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกคำตอบกลับ</div>';
         }
@@ -361,11 +376,11 @@ $complaints = $conn->query($complaint_sql);
         </div>
     </div>
 
-    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหาพร้อมระบบตอบกลับ -->
+    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหาพร้อมระบบตอบกลับต่อเนื่อง -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fs-6">
-                <i class="bi bi-clock-history me-2"></i> ประวัติรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา (สามารถพิมพ์ตอบกลับได้)
+                <i class="bi bi-clock-history me-2"></i> ประวัติรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา (ประวัติการสนทนาโต้ตอบ)
             </h5>
             <span class="badge bg-light text-danger fw-bold"><?= $complaints ? $complaints->num_rows : 0 ?> รายการ</span>
         </div>
@@ -405,8 +420,8 @@ $complaints = $conn->query($complaint_sql);
                         <tr>
                             <th style="width: 20%;">นักศึกษา</th>
                             <th style="width: 15%;">หัวข้อ</th>
-                            <th style="width: 30%;">รายละเอียด / เกี่ยวกับทีม</th>
-                            <th style="width: 35%;">การตอบกลับของแอดมิน</th>
+                            <th style="width: 30%;">รายละเอียดปัญหาเริ่มต้น</th>
+                            <th style="width: 35%;">ประวัติการสนทนาโต้ตอบ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -416,26 +431,37 @@ $complaints = $conn->query($complaint_sql);
                                     <td>
                                         <strong><?= htmlspecialchars($cp['fullname']) ?></strong>
                                         <br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small>
-                                        <br><small class="text-muted opacity-75"><i class="bi bi-clock"></i> <?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
                                     </td>
                                     <td><span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span></td>
                                     <td>
-                                        <div class="p-2 bg-light rounded text-dark border"><?= nl2br(htmlspecialchars($cp['message'])) ?></div>
+                                        <div class="p-2 bg-light rounded text-dark border mb-1"><?= nl2br(htmlspecialchars($cp['message'])) ?></div>
+                                        <small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
                                     </td>
                                     <td>
-                                        <?php if (!empty($cp['admin_reply'])): ?>
-                                            <div class="p-2 bg-success bg-opacity-10 border border-success rounded text-success mb-2">
-                                                <small class="fw-bold d-block"><i class="bi bi-check-circle-fill me-1"></i> ตอบกลับแล้ว:</small>
-                                                <?= nl2br(htmlspecialchars($cp['admin_reply'])) ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        
-                                        <!-- ฟอร์มพิมพ์ตอบกลับ -->
-                                        <form method="POST" class="mt-1">
+                                        <!-- กล่องแสดงประวัติการพิมพ์โต้ตอบทั้งหมด -->
+                                        <div class="p-2 bg-white border rounded mb-2 shadow-sm" style="max-height: 160px; overflow-y: auto;">
+                                            <?php
+                                            $c_id = $cp['id'];
+                                            $replies = $conn->query("SELECT * FROM complaint_replies WHERE complaint_id = $c_id ORDER BY created_at ASC");
+                                            if ($replies && $replies->num_rows > 0) {
+                                                while ($rp = $replies->fetch_assoc()) {
+                                                    $is_admin = ($rp['sender_type'] === 'admin');
+                                                    $bg_class = $is_admin ? 'bg-success bg-opacity-10 border-success text-success' : 'bg-primary bg-opacity-10 border-primary text-primary';
+                                                    $sender_label = $is_admin ? '🛡️ แอดมิน' : '🎓 นักศึกษา';
+                                                    echo '<div class="p-1.5 mb-1 border rounded small ' . $bg_class . '"><strong>' . $sender_label . ':</strong> ' . htmlspecialchars($rp['message']) . '<br><span class="text-muted" style="font-size:10px;">' . $rp['created_at'] . '</span></div>';
+                                                }
+                                            } else {
+                                                echo '<span class="text-muted small">ยังไม่มีการตอบกลับ</span>';
+                                            }
+                                            ?>
+                                        </div>
+
+                                        <!-- ฟอร์มพิมพ์ข้อความตอบกลับต่อเนื่อง -->
+                                        <form method="POST">
                                             <input type="hidden" name="complaint_id" value="<?= $cp['id'] ?>">
                                             <input type="hidden" name="student_user_id" value="<?= $cp['user_id'] ?>">
                                             <div class="input-group input-group-sm">
-                                                <input type="text" name="admin_reply" class="form-control" placeholder="<?= !empty($cp['admin_reply']) ? 'พิมพ์แก้ไขคำตอบ...' : 'พิมพ์ข้อความตอบกลับ...' ?>" required>
+                                                <input type="text" name="admin_reply" class="form-control" placeholder="พิมพ์ข้อความตอบกลับ..." required>
                                                 <button type="submit" name="reply_complaint" class="btn btn-dark"><i class="bi bi-send-fill"></i> ส่ง</button>
                                             </div>
                                         </form>

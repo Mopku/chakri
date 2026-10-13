@@ -216,6 +216,68 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
         </div>
     </div>
 
+    <!-- 💬 ประวัติการแจ้งปัญหาและการสนทนากับแอดมิน -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-primary text-white fw-bold">
+            <i class="bi bi-chat-left-text-fill me-1"></i> ประวัติการแจ้งปัญหาและการสนทนากับแอดมิน
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 40%;">หัวข้อ / รายละเอียดที่คุณแจ้ง</th>
+                            <th style="width: 60%;">ประวัติการสนทนากับแอดมิน</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php 
+                        $my_complaints = $conn->query("SELECT * FROM complaints WHERE user_id = $user_id ORDER BY created_at DESC");
+                        if ($my_complaints && $my_complaints->num_rows > 0):
+                            while ($mc = $my_complaints->fetch_assoc()):
+                        ?>
+                            <tr>
+                                <td>
+                                    <span class="badge bg-warning text-dark mb-1"><?= htmlspecialchars($mc['subject']) ?></span>
+                                    <div class="p-2 bg-light rounded border small"><?= nl2br(htmlspecialchars($mc['message'])) ?></div>
+                                    <small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($mc['created_at'])) ?> น.</small>
+                                </td>
+                                <td>
+                                    <div class="p-2 bg-white border rounded shadow-sm" style="max-height: 160px; overflow-y: auto;">
+                                        <?php 
+                                        $comp_id = $mc['id'];
+                                        $chat_logs = $conn->query("SELECT * FROM complaint_replies WHERE complaint_id = $comp_id ORDER BY created_at ASC");
+                                        if ($chat_logs && $chat_logs->num_rows > 0) {
+                                            while ($log = $chat_logs->fetch_assoc()) {
+                                                $is_admin_log = ($log['sender_type'] === 'admin');
+                                                $box_style = $is_admin_log ? 'bg-success bg-opacity-10 border-success text-success' : 'bg-primary bg-opacity-10 border-primary text-primary';
+                                                $who = $is_admin_log ? '🛡️ แอดมิน' : '🎓 คุณ';
+                                                echo '<div class="p-1.5 mb-1 border rounded small ' . $box_style . '"><strong>' . $who . ':</strong> ' . htmlspecialchars($log['message']) . '<br><span class="text-muted" style="font-size:10px;">' . $log['created_at'] . '</span></div>';
+                                            }
+                                        } else {
+                                            // หากยังไม่มีประวัติในตารางย่อย ให้แสดงข้อความล่าสุดจากฟิลด์ admin_reply (รองรับข้อมูลเก่า)
+                                            if (!empty($mc['admin_reply'])) {
+                                                echo '<div class="p-1.5 mb-1 border rounded small bg-success bg-opacity-10 border-success text-success"><strong>🛡️ แอดมิน:</strong> ' . htmlspecialchars($mc['admin_reply']) . '</div>';
+                                            } else {
+                                                echo '<span class="text-muted small">รอแอดมินตรวจสอบและตอบกลับ...</span>';
+                                            }
+                                        }
+                                        ?>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php 
+                            endwhile;
+                        else: 
+                        ?>
+                            <tr><td colspan="2" class="text-center py-4 text-muted">ยังไม่มีประวัติการแจ้งปัญหาของคุณ</td></tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <!-- ปุ่มย้อนกลับไปหน้าตารางแข่งขัน -->
     <div class="d-flex justify-content-start mb-3">
         <a href="schedule_landing.php" class="btn btn-outline-secondary">
