@@ -20,7 +20,7 @@ if (isset($_GET['delete_team_by_admin'])) {
     }
 }
 
-// 2. แอดมินสร้างแมตช์การแข่งขันใหม่
+// 2. แอดมินสร้างแมตช์การแข่งขันใหม่ (พร้อมระบบแจ้งเตือนลูกทีม)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     $sport_name = trim($_POST['sport_name']);
     $team1_id   = intval($_POST['team1_id']);
@@ -32,8 +32,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     if (!empty($sport_name) && $team1_id > 0 && $team2_id > 0 && $team1_id !== $team2_id) {
         $stmt_m = $conn->prepare("INSERT INTO matches (sport_name, team1_id, team2_id, match_time, location, status) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt_m->bind_param("siisss", $sport_name, $team1_id, $team2_id, $match_time, $location, $status);
+        
         if ($stmt_m->execute()) {
-            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+            
+            // --- 🌟 ระบบสร้างการแจ้งเตือน (Notifications) 🌟 ---
+            // 1. สร้างตารางแจ้งเตือนอัตโนมัติเผื่อไว้กรณีที่ฐานข้อมูลยังไม่มี
+            $conn->query("CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                message TEXT NOT NULL,
+                is_read TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )");
+
+            // 2. ดึงชื่อทีมเพื่อนำไปใส่ในข้อความแจ้งเตือน
+            $team_names = [];
+            $q_teams = $conn->query("SELECT id, team_name FROM teams WHERE id IN ($team1_id, $team2_id)");
+            while($rt = $q_teams->fetch_assoc()) {
+                $team_names[$rt['id']] = $rt['team_name'];
+            }
+            $t1_name = $team_names[$team1_id] ?? 'ทีม A';
+            $t2_name = $team_names[$team2_id] ?? 'ทีม B';
+
+            // 3. เตรียมข้อความแจ้งเตือน
+            $msg_team1 = "📢 ตารางแข่งใหม่! ทีมของคุณ ({$t1_name}) มีคิวแข่งกีฬา {$sport_name} พบกับ {$t2_name} | 🕒 เวลา: {$match_time} | 📍 สถานที่: {$location}";
+            $msg_team2 = "📢 ตารางแข่งใหม่! ทีมของคุณ ({$t2_name}) มีคิวแข่งกีฬา {$sport_name} พบกับ {$t1_name} | 🕒 เวลา: {$match_time} | 📍 สถานที่: {$location}";
+
+            $notify_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+
+            // 4. ส่งแจ้งเตือนให้นักศึกษาทุกคนในทีมที่ 1 (ส่งให้เฉพาะคนที่กด 'accepted' แล้ว)
+            $m1 = $conn->query("SELECT user_id FROM team_members WHERE team_id = $team1_id AND status = 'accepted'");
+            if($m1) {
+                while($row = $m1->fetch_assoc()) {
+                    $notify_stmt->bind_param("is", $row['user_id'], $msg_team1);
+                    $notify_stmt->execute();
+                }
+            }
+
+            // 5. ส่งแจ้งเตือนให้นักศึกษาทุกคนในทีมที่ 2 (ส่งให้เฉพาะคนที่กด 'accepted' แล้ว)
+            $m2 = $conn->query("SELECT user_id FROM team_members WHERE team_id = $team2_id AND status = 'accepted'");
+            if($m2) {
+                while($row = $m2->fetch_assoc()) {
+                    $notify_stmt->bind_param("is", $row['user_id'], $msg_team2);
+                    $notify_stmt->execute();
+                }
+            }
+            // --- 🌟 สิ้นสุดระบบแจ้งเตือน 🌟 ---
+
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันและแจ้งเตือนไปยังนักศึกษาในทีมทุกคนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         } else {
             $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล</div>';
         }
@@ -239,7 +285,7 @@ $complaints = $conn->query($complaint_sql);
                         <tr>
                             <th style="width: 8%; text-align: center;">โลโก้</th>
                             <th style="width: 17%;">ชื่อทีม</th>
-                            <th style="width: 15%;">ชนิดกีฬา</th> <!-- เพิ่มคอลัมน์ชนิดกีฬา -->
+                            <th style="width: 15%;">ชนิดกีฬา</th>
                             <th style="width: 15%;">สีประจำทีม</th>
                             <th style="width: 20%;">หัวหน้าทีม</th>
                             <th style="width: 10%; text-align: center;">จำนวนสมาชิก</th>
@@ -262,7 +308,6 @@ $complaints = $conn->query($complaint_sql);
                                     </td>
                                     <td><strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong></td>
                                     
-                                    <!-- นำชนิดกีฬามาแสดงให้แอดมินดู -->
                                     <td>
                                         <?php if (!empty($tm['sport_name'])): ?>
                                             <span class="badge bg-dark rounded-pill px-2 py-1"><?= htmlspecialchars($tm['sport_name']) ?></span>
@@ -303,7 +348,6 @@ $complaints = $conn->query($complaint_sql);
             <span class="badge bg-light text-danger fw-bold"><?= $complaints ? $complaints->num_rows : 0 ?> รายการ</span>
         </div>
         <div class="card-body bg-light border-bottom">
-            <!-- ฟอร์มกรอกวันที่และเลือกทีมเพื่อค้นหาประวัติ -->
             <form method="GET" class="row g-2 align-items-center">
                 <div class="col-md-4">
                     <label class="form-label mb-1 fw-bold small text-muted"><i class="bi bi-calendar3 me-1"></i> เลือกวันที่แจ้งปัญหา</label>
@@ -441,7 +485,6 @@ $complaints = $conn->query($complaint_sql);
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// สคริปต์กรองทีมกีฬาอัตโนมัติ: เมื่อเลือกกีฬาอะไร จะแสดงเฉพาะทีมของกีฬานั้นๆ
 document.addEventListener('DOMContentLoaded', function() {
     const sportSelect = document.getElementById('sport_select');
     const team1Select = document.getElementById('team1_select');
@@ -450,7 +493,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function filterTeamsBySport() {
         const selectedSport = sportSelect.value;
         
-        // ถ้ายังไม่ได้เลือกกีฬา ให้ปิดการเลือกทีมไว้
         if(selectedSport === "") {
             team1Select.disabled = true;
             team2Select.disabled = true;
@@ -466,9 +508,8 @@ document.addEventListener('DOMContentLoaded', function() {
         team1Select.options[0].text = "-- เลือกทีมที่ 1 --";
         team2Select.options[0].text = "-- เลือกทีมที่ 2 --";
 
-        // กรองทีม 1
         Array.from(team1Select.options).forEach(option => {
-            if (option.value === "") return; // ข้ามตัวเลือกเริ่มต้น
+            if (option.value === "") return;
             if (option.getAttribute('data-sport') === selectedSport) {
                 option.style.display = 'block';
             } else {
@@ -477,9 +518,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         team1Select.value = ""; 
 
-        // กรองทีม 2
         Array.from(team2Select.options).forEach(option => {
-            if (option.value === "") return; // ข้ามตัวเลือกเริ่มต้น
+            if (option.value === "") return;
             if (option.getAttribute('data-sport') === selectedSport) {
                 option.style.display = 'block';
             } else {

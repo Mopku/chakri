@@ -14,6 +14,20 @@ $student_id = $_SESSION['student_id'] ?? '-';
 $message = '';
 
 // =========================================================
+// 📌 ระบบจัดการการแจ้งเตือน (กดรับทราบเพื่อให้ข้อความหายไป)
+// =========================================================
+if (isset($_GET['read_noti'])) {
+    $noti_id = intval($_GET['read_noti']);
+    $conn->query("UPDATE notifications SET is_read = 1 WHERE id = $noti_id AND user_id = $user_id");
+    header("Location: student_dashboard.php");
+    exit();
+}
+
+// ดึงข้อความแจ้งเตือนใหม่ที่ยังไม่ได้อ่าน
+$notifications_list = $conn->query("SELECT * FROM notifications WHERE user_id = $user_id AND is_read = 0 ORDER BY created_at DESC");
+$noti_count = $notifications_list ? $notifications_list->num_rows : 0;
+
+// =========================================================
 // 📌 ระบบประมวลผลการสร้างทีมกีฬาใหม่
 // =========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
@@ -115,8 +129,25 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
 
 <div class="container my-4" style="max-width: 900px;">
 
-    <!-- 📢 แสดงข้อความแจ้งเตือน (ถ้ามี) -->
+    <!-- 📢 แสดงข้อความแจ้งเตือน (จากระบบ Error/Success สร้างทีม) -->
     <?= $message ?>
+
+    <!-- 🔔 การแจ้งเตือนจากแอดมิน (สร้างตารางแข่งขัน) -->
+    <?php if ($noti_count > 0): ?>
+        <?php while ($noti = $notifications_list->fetch_assoc()): ?>
+            <div class="alert alert-info d-flex align-items-center shadow-sm border-2 border-info mb-4">
+                <i class="bi bi-info-circle-fill text-info fs-2 me-3"></i>
+                <div class="flex-grow-1">
+                    <h6 class="mb-1 fw-bold text-dark">แจ้งเตือนตารางแข่งขันใหม่!</h6>
+                    <p class="mb-0 text-dark"><?= htmlspecialchars($noti['message']) ?></p>
+                    <small class="text-muted"><i class="bi bi-clock me-1"></i> <?= date('d/m/Y H:i', strtotime($noti['created_at'])) ?> น.</small>
+                </div>
+                <a href="student_dashboard.php?read_noti=<?= $noti['id'] ?>" class="btn btn-outline-info fw-bold ms-3" title="รับทราบ">
+                    รับทราบ <i class="bi bi-check2"></i>
+                </a>
+            </div>
+        <?php endwhile; ?>
+    <?php endif; ?>
 
     <!-- 🔔 การแจ้งเตือนคำเชิญเข้าทีม -->
     <?php if ($pending_count > 0): ?>
