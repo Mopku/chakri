@@ -10,7 +10,17 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 $message = '';
 
-// 1. แอดมินสร้างแมตช์การแข่งขันใหม่
+// 1. แอดมินลบทีมที่นักศึกษาสร้างขึ้น
+if (isset($_GET['delete_team_by_admin'])) {
+    $del_team_id = intval($_GET['delete_team_by_admin']);
+    $stmt_del_t = $conn->prepare("DELETE FROM teams WHERE id = ?");
+    $stmt_del_t->bind_param("i", $del_team_id);
+    if ($stmt_del_t->execute()) {
+        $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> ลบทีมกีฬาเรียบร้อยแล้ว <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+    }
+}
+
+// 2. แอดมินสร้างแมตช์การแข่งขันใหม่
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     $sport_name = trim($_POST['sport_name']);
     $team1_id   = intval($_POST['team1_id']);
@@ -32,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     }
 }
 
-// 2. แอดมินลบรายการแข่งขัน
+// 3. แอดมินลบรายการแข่งขัน
 if (isset($_GET['delete_match'])) {
     $del_id = intval($_GET['delete_match']);
     $stmt_del = $conn->prepare("DELETE FROM matches WHERE id = ?");
@@ -42,7 +52,7 @@ if (isset($_GET['delete_match'])) {
     exit();
 }
 
-// 3. แอดมินเพิ่มรายการเข้าร่วมกิจกรรมใหม่ให้นักศึกษา
+// 4. แอดมินเพิ่มรายการเข้าร่วมกิจกรรมใหม่ให้นักศึกษา
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_attendance'])) {
     $user_id       = intval($_POST['user_id']);
     $activity_id   = intval($_POST['activity_id']);
@@ -58,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_attendance'])) {
     }
 }
 
-// 4. แอดมินอัปเดตคะแนน/เวลา
+// 5. แอดมินอัปเดตคะแนน/เวลา
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_attendance'])) {
     $attendance_id = intval($_POST['attendance_id']);
     $score         = intval($_POST['score']);
@@ -216,7 +226,7 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
         </div>
     </div>
 
-    <!-- 🏆 ส่วนที่ 2: ทีมกีฬาที่สร้างขึ้นในระบบ -->
+    <!-- 🏆 ส่วนที่ 2: ทีมกีฬาที่สร้างขึ้นในระบบ + ปุ่มลบทีมโดยแอดมิน -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-warning text-dark py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fw-bold">
@@ -236,12 +246,13 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 10%; text-align: center;">โลโก้</th>
-                            <th style="width: 25%;">ชื่อทีม</th>
-                            <th style="width: 20%;">สีประจำทีม</th>
-                            <th style="width: 25%;">หัวหน้าทีม</th>
+                            <th style="width: 8%; text-align: center;">โลโก้</th>
+                            <th style="width: 22%;">ชื่อทีม</th>
+                            <th style="width: 18%;">สีประจำทีม</th>
+                            <th style="width: 22%;">หัวหน้าทีม</th>
                             <th style="width: 10%; text-align: center;">จำนวนสมาชิก</th>
-                            <th style="width: 10%;">วันที่สร้างทีม</th>
+                            <th style="width: 10%;">วันที่สร้าง</th>
+                            <th style="width: 10%; text-align: center;">จัดการ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -265,10 +276,15 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
                                     </td>
                                     <td class="text-center"><span class="badge bg-info text-dark rounded-pill px-3 py-2"><?= $tm['member_count'] ?> คน</span></td>
                                     <td><small class="text-muted"><?= date('d/m/Y', strtotime($tm['created_at'])) ?></small></td>
+                                    <td class="text-center">
+                                        <a href="admin_dashboard.php?delete_team_by_admin=<?= $tm['id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('คุณต้องการลบทีม <?= htmlspecialchars($tm['team_name']) ?> ใช่หรือไม่?');" title="ยกเลิก/ลบทีมนี้">
+                                            <i class="bi bi-trash-fill"></i> ลบทีม
+                                        </a>
+                                    </td>
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="6" class="text-center py-4 text-muted">ไม่พบทีมกีฬา</td></tr>
+                            <tr><td colspan="7" class="text-center py-4 text-muted">ไม่พบทีมกีฬา</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
