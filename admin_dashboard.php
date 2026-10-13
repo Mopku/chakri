@@ -66,9 +66,8 @@ if (isset($_GET['delete_match'])) {
     exit();
 }
 
-// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์เลือกแมตช์แข่ง
-$all_teams_dropdown = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
-$all_teams_dropdown2 = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์เลือกแมตช์แข่งและใช้กรองประวัติ
+$all_teams_list = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
 
 // ดึงรายการแมตช์การแข่งขันทั้งหมด
 $matches_list = $conn->query("
@@ -96,13 +95,32 @@ if (!empty($search_team)) {
 $team_query .= " ORDER BY t.created_at DESC";
 $teams_list = $conn->query($team_query);
 
-// ดึงรายการแจ้งปัญหา / ข้อร้องเรียน
-$complaints = $conn->query("
+// 5. ระบบกรองประวัติรายการแจ้งปัญหา / ข้อร้องเรียน (ค้นหาตามวันที่ และ ตามทีม)
+$filter_date = trim($_GET['filter_date'] ?? '');
+$filter_team = trim($_GET['filter_team'] ?? '');
+
+$complaint_where = [];
+if (!empty($filter_date)) {
+    $safe_date = $conn->real_escape_string($filter_date);
+    $complaint_where[] = "DATE(c.created_at) = '$safe_date'";
+}
+if (!empty($filter_team)) {
+    $safe_team = $conn->real_escape_string($filter_team);
+    $complaint_where[] = "c.message LIKE '%[เกี่ยวกับทีม: $safe_team]%'";
+}
+
+$complaint_sql = "
     SELECT c.*, u.fullname, u.student_id 
     FROM complaints c 
     JOIN users u ON c.user_id = u.id 
-    ORDER BY c.created_at DESC
-");
+";
+
+if (count($complaint_where) > 0) {
+    $complaint_sql .= " WHERE " . implode(' AND ', $complaint_where);
+}
+$complaint_sql .= " ORDER BY c.created_at DESC";
+
+$complaints = $conn->query($complaint_sql);
 ?>
 
 <!DOCTYPE html>
@@ -171,7 +189,6 @@ $complaints = $conn->query("
                                     <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= htmlspecialchars($mc['match_time']) ?></small></td>
                                     <td><small class="text-muted"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small></td>
                                     
-                                    <!-- ฟอร์มกดอัปเดตสถานะแมตช์ -->
                                     <td class="text-center">
                                         <form method="POST" class="d-inline-block">
                                             <input type="hidden" name="match_id" value="<?= $mc['id'] ?>">
@@ -266,17 +283,49 @@ $complaints = $conn->query("
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: รายการแจ้งปัญหา / ข้อร้องเรียน -->
+    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหา / ค้นหาตามวันที่และทีม -->
     <div class="card shadow-sm border-0 mb-4">
-        <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0 fs-6"><i class="bi bi-chat-square-text-fill me-2"></i> รายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา</h5>
+        <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="card-title mb-0 fs-6">
+                <i class="bi bi-clock-history me-2"></i> ประวัติรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา
+            </h5>
             <span class="badge bg-light text-danger fw-bold"><?= $complaints ? $complaints->num_rows : 0 ?> รายการ</span>
+        </div>
+        <div class="card-body bg-light border-bottom">
+            <!-- ฟอร์มกรอกวันที่และเลือกทีมเพื่อค้นหาประวัติ -->
+            <form method="GET" class="row g-2 align-items-center">
+                <div class="col-md-4">
+                    <label class="form-label mb-1 fw-bold small text-muted"><i class="bi bi-calendar3 me-1"></i> เลือกวันที่แจ้งปัญหา</label>
+                    <input type="date" name="filter_date" class="form-control form-control-sm" value="<?= htmlspecialchars($filter_date) ?>">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label mb-1 fw-bold small text-muted"><i class="bi bi-shield-fill me-1"></i> กรองตามทีมกีฬา</label>
+                    <select name="filter_team" class="form-select form-select-sm">
+                        <option value="">-- แสดงทุกทีม --</option>
+                        <?php 
+                        if ($all_teams_list && $all_teams_list->num_rows > 0) {
+                            $all_teams_list->data_seek(0);
+                            while ($t = $all_teams_list->fetch_assoc()) {
+                                $selected = ($filter_team === $t['team_name']) ? 'selected' : '';
+                                echo '<option value="' . htmlspecialchars($t['team_name']) . '" ' . $selected . '>' . htmlspecialchars($t['team_name']) . ' (' . htmlspecialchars($t['team_color']) . ')</option>';
+                            }
+                        }
+                        ?>
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end gap-2" style="margin-top: 28px;">
+                    <button type="submit" class="btn btn-danger btn-sm fw-bold w-100"><i class="bi bi-search me-1"></i> ค้นหาประวัติ</button>
+                    <?php if (!empty($filter_date) || !empty($filter_team)): ?>
+                        <a href="admin_dashboard.php" class="btn btn-outline-secondary btn-sm w-50">ล้างค้นหา</a>
+                    <?php endif; ?>
+                </div>
+            </form>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
-                        <tr><th>นักศึกษา</th><th>หัวข้อ</th><th>รายละเอียด</th><th>วันที่แจ้ง</th></tr>
+                        <tr><th>นักศึกษา</th><th>หัวข้อ</th><th>รายละเอียด / เกี่ยวกับทีม</th><th>วันที่และเวลาที่แจ้ง</th></tr>
                     </thead>
                     <tbody>
                         <?php if ($complaints && $complaints->num_rows > 0): ?>
@@ -285,9 +334,11 @@ $complaints = $conn->query("
                                     <td><strong><?= htmlspecialchars($cp['fullname']) ?></strong><br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small></td>
                                     <td><span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span></td>
                                     <td><div class="p-2 bg-light rounded text-dark border"><?= nl2br(htmlspecialchars($cp['message'])) ?></div></td>
-                                    <td><small class="text-muted"><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small></td>
+                                    <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small></td>
                                 </tr>
                             <?php endwhile; ?>
+                        <?php else: ?>
+                            <tr><td colspan="4" class="text-center py-4 text-muted">ไม่พบประวัติรายการแจ้งปัญหาตรงตามเงื่อนไขที่เลือก</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -324,11 +375,14 @@ $complaints = $conn->query("
                         <label class="form-label fw-bold">ทีมแข่งขันที่ 1 (ฝั่ง A)</label>
                         <select name="team1_id" class="form-select" required>
                             <option value="">-- เลือกทีมที่ 1 --</option>
-                            <?php if ($all_teams_dropdown): ?>
-                                <?php while ($t1 = $all_teams_dropdown->fetch_assoc()): ?>
-                                    <option value="<?= $t1['id'] ?>"><?= htmlspecialchars($t1['team_name']) ?> (<?= htmlspecialchars($t1['team_color']) ?>)</option>
-                                <?php endwhile; ?>
-                            <?php endif; ?>
+                            <?php 
+                            if ($all_teams_list) {
+                                $all_teams_list->data_seek(0);
+                                while ($t1 = $all_teams_list->fetch_assoc()) {
+                                    echo '<option value="' . $t1['id'] . '">' . htmlspecialchars($t1['team_name']) . ' (' . htmlspecialchars($t1['team_color']) . ')</option>';
+                                }
+                            }
+                            ?>
                         </select>
                     </div>
 
@@ -336,11 +390,14 @@ $complaints = $conn->query("
                         <label class="form-label fw-bold">ทีมแข่งขันที่ 2 (ฝั่ง B)</label>
                         <select name="team2_id" class="form-select" required>
                             <option value="">-- เลือกทีมที่ 2 --</option>
-                            <?php if ($all_teams_dropdown2): ?>
-                                <?php while ($t2 = $all_teams_dropdown2->fetch_assoc()): ?>
-                                    <option value="<?= $t2['id'] ?>"><?= htmlspecialchars($t2['team_name']) ?> (<?= htmlspecialchars($t2['team_color']) ?>)</option>
-                                <?php endwhile; ?>
-                            <?php endif; ?>
+                            <?php 
+                            if ($all_teams_list) {
+                                $all_teams_list->data_seek(0);
+                                while ($t2 = $all_teams_list->fetch_assoc()) {
+                                    echo '<option value="' . $t2['id'] . '">' . htmlspecialchars($t2['team_name']) . ' (' . htmlspecialchars($t2['team_color']) . ')</option>';
+                                }
+                            }
+                            ?>
                         </select>
                     </div>
 
@@ -354,7 +411,6 @@ $complaints = $conn->query("
                         <input type="text" name="location" class="form-control" placeholder="เช่น สนาม 1 (คอร์ท A) อาคารศูนย์กีฬา" required>
                     </div>
 
-                    <!-- แสดงผลสถานะแมตช์เริ่มต้นแบบไม่มีลูกศรชี้ลง -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">สถานะแมตช์เริ่มต้น</label>
                         <input type="text" class="form-control bg-light text-dark fw-bold" value="⏳ รอดำเนินการ" readonly>
