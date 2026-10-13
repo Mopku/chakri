@@ -7,7 +7,7 @@ $is_logged_in = isset($_SESSION['user_id']) || isset($_SESSION['role']) || isset
 $user_role    = $_SESSION['role'] ?? ($_SESSION['admin_id'] ? 'admin' : '');
 $user_name    = $_SESSION['fullname'] ?? ($_SESSION['name'] ?? 'ผู้ใช้งาน');
 
-// ดึงรายการแข่งขันกีฬาทั้งหมดที่แอดมินสร้างขึ้น
+// ดึงรายการแข่งขันกีฬาทั้งหมดที่แอดมินสร้างขึ้น (พร้อมดึงคะแนน team1_score และ team2_score ด้วย)
 $latest_matches = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -156,18 +156,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                                 <span class="badge bg-warning text-dark badge-status"><i class="bi bi-clock-history"></i> รอดำเนินการ</span>
                             <?php endif; ?>
                         </div>
+
+                        <!-- แสดงชื่อทีมและคะแนน -->
                         <div class="row text-center fw-bold align-items-center my-2">
-                            <div class="col-5 text-end text-primary">
+                            <div class="col-4 text-end text-primary">
                                 <?= htmlspecialchars($mc['team1_name']) ?>
                                 <small class="d-block text-muted opacity-75 fw-normal" style="font-size: 0.75rem;"><?= htmlspecialchars($mc['team1_color']) ?></small>
                             </div>
-                            <div class="col-2 text-muted fs-6">VS</div>
-                            <div class="col-5 text-start text-danger">
+                            
+                            <div class="col-4 text-center">
+                                <?php if ($mc['team1_score'] !== null && $mc['team2_score'] !== null): ?>
+                                    <span class="badge bg-dark fs-5 px-3 py-1 fw-bold">
+                                        <?= $mc['team1_score'] ?> - <?= $mc['team2_score'] ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="text-muted fs-5 fw-bold">VS</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="col-4 text-start text-danger">
                                 <?= htmlspecialchars($mc['team2_name']) ?>
                                 <small class="d-block text-muted opacity-75 fw-normal" style="font-size: 0.75rem;"><?= htmlspecialchars($mc['team2_color']) ?></small>
                             </div>
                         </div>
-                        <div class="text-center">
+
+                        <div class="text-center mt-2">
                             <small class="text-muted bg-light px-2 py-1 rounded"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small>
                         </div>
                     </div>
@@ -214,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                         </select>
                     </div>
 
-                    <!-- ดร็อปดาวน์เลือกทีมกีฬาในระบบ (แสดงชื่อทีม + สี + ชนิดกีฬา) -->
+                    <!-- ดร็อปดาวน์เลือกทีมกีฬาในระบบ -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">เลือกทีมกีฬาที่ต้องการแจ้งปัญหา (ถ้ามี)</label>
                         <select name="team_id" class="form-select">
@@ -222,8 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                             <?php if ($teams_dropdown && $teams_dropdown->num_rows > 0): ?>
                                 <?php while ($tm = $teams_dropdown->fetch_assoc()): ?>
                                     <option value="<?= $tm['id'] ?>">
-                                        <?= htmlspecialchars($tm['team_name']) ?> (<?= htmlspecialchars($tm['team_color']) ?>) 
-                                        <?= !empty($tm['sport_name']) ? ' - [ ' . htmlspecialchars($tm['sport_name']) . ' ]' : '' ?>
+                                        <?= htmlspecialchars($tm['team_name']) ?> (<?= htmlspecialchars($tm['team_color']) ?>) - <?= !empty($tm['sport_name']) ? '[' . htmlspecialchars($tm['sport_name']) . ']' : '' ?>
                                     </option>
                                 <?php endwhile; ?>
                             <?php endif; ?>
