@@ -17,42 +17,6 @@ if ($chk_col && $chk_col->num_rows > 0) {
     $has_sport_col = true;
 }
 
-// ฟังก์ชันย่อขนาดรูปภาพโลโก้เพื่อป้องกัน Database Overflow / Error 500
-function resize_image_base64($file_tmp, $max_width = 200, $max_height = 200) {
-    list($width, $height, $type) = getimagesize($file_tmp);
-    if (!$width || !$height) return '';
-
-    switch ($type) {
-        case IMAGETYPE_JPEG: $src = imagecreatefromjpeg($file_tmp); break;
-        case IMAGETYPE_PNG:  $src = imagecreatefrompng($file_tmp); break;
-        case IMAGETYPE_WEBP: $src = imagecreatefromwebp($file_tmp); break;
-        default: return '';
-    }
-
-    $ratio = min($max_width / $width, $max_height / $height);
-    $new_width  = round($width * $ratio);
-    $new_height = round($height * $ratio);
-
-    $dst = imagecreatetruecolor($new_width, $new_height);
-    
-    // รักษาความโปร่งใสสำหรับไฟล์ PNG/WEBP
-    if ($type == IMAGETYPE_PNG || $type == IMAGETYPE_WEBP) {
-        imagealphablending($dst, false);
-        imagesavealpha($dst, true);
-    }
-
-    imagecopyresampled($dst, $src, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
-
-    ob_start();
-    imagejpeg($dst, null, 75); // บีบอัดไฟล์ JPEG คุณภาพ 75%
-    $data = ob_get_clean();
-
-    imagedestroy($src);
-    imagedestroy($dst);
-
-    return 'data:image/jpeg;base64,' . base64_encode($data);
-}
-
 // 1. จัดการสร้างทีมใหม่
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
@@ -60,15 +24,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $sport_name = trim($_POST['sport_name'] ?? '');
     $logo_url   = '';
 
-    // จัดการอัปโหลดไฟล์รูปภาพและย่อขนาด
+    // จัดการอัปโหลดไฟล์รูปภาพ (ใช้ getimagesize ปลอดภัย 100% และไม่ Error 500)
     if (isset($_FILES['logo_file']) && $_FILES['logo_file']['error'] === UPLOAD_ERR_OK) {
-        $file_tmp = $_FILES['logo_file']['tmp_name'];
-        if (is_uploaded_file($file_tmp)) {
-            $logo_url = resize_image_base64($file_tmp);
+        $file_tmp  = $_FILES['logo_file']['tmp_name'];
+        $file_size = $_FILES['logo_file']['size'];
+
+        // จำกัดขนาดไม่เกิน 1.5 MB เพื่อไม่ให้ฐานข้อมูลพัง
+        if ($file_size <= 1.5 * 1024 * 1024) {
+            $img_info = @getimagesize($file_tmp);
+
+            if ($img_info !== false) {
+                $mime_type = $img_info['mime'];
+                $raw_bytes = file_get_contents($file_tmp);
+                $logo_url  = 'data:' . $mime_type . ';base64,' . base64_encode($raw_bytes);
+            } else {
+                $message = '<div class="alert alert-warning">ไฟล์ที่อัปโหลดไม่ใช่รูปแบบรูปภาพที่ถูกต้อง กรุณาเลือกไฟล์ใหม่</div>';
+            }
+        } else {
+            $message = '<div class="alert alert-warning">รูปภาพมีขนาดใหญ่เกินไป ฐานข้อมูลไม่สามารถรับได้ กรุณาย่อรูปให้มีขนาดเล็กกว่า 1.5MB ครับ</div>';
         }
+    } elseif (isset($_FILES['logo_file']) && $_FILES['logo_file']['error'] === UPLOAD_ERR_INI_SIZE) {
+        $message = '<div class="alert alert-danger">ไฟล์มีขนาดใหญ่เกินขีดจำกัดของเซิร์ฟเวอร์ กรุณาเลือกรูปภาพที่เล็กลง</div>';
     }
 
-    if (!empty($team_name) && !empty($team_color)) {
+    if (!empty($team_name) && !empty($team_color) && empty($message)) {
         if ($has_sport_col && !empty($sport_name)) {
             $check_color = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ? AND sport_name = ?");
             $check_color->bind_param("ss", $team_color, $sport_name);
@@ -83,27 +62,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
         if ($existing_team) {
             $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_team['team_name']) . '" กรุณาเลือกสีอื่น</div>';
         } else {
-            if ($has_sport_col) {
-                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, logo_url, leader_id) VALUES (?, ?, ?, ?, ?)");
-                $stmt->bind_param("ssssi", $team_name, $team_color, $sport_name, $logo_url, $user_id);
-            } else {
-                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
-                $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
-            }
-            
-            if ($stmt->execute()) {
-                $new_team_id = $stmt->insert_id;
-                $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
-                $stmt_m->bind_param("ii", $new_team_id, $user_id);
-                $stmt_m->execute();
+            // ดักจับ Error ด้วย Try-Catch ป้องกันหน้าเว็บล่มเป็น HTTP 500
+            try {
+                if ($has_sport_col) {
+                    $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, logo_url, leader_id) VALUES (?, ?, ?, ?, ?)");
+                    $stmt->bind_param("ssssi", $team_name, $team_color, $sport_name, $logo_url, $user_id);
+                } else {
+                    $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
+                    $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
+                }
+                
+                if ($stmt->execute()) {
+                    $new_team_id = $stmt->insert_id;
+                    $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
+                    $stmt_m->bind_param("ii", $new_team_id, $user_id);
+                    $stmt_m->execute();
 
-                header("Location: student_dashboard.php");
-                exit();
-            } else {
-                $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง</div>';
+                    header("Location: student_dashboard.php");
+                    exit();
+                } else {
+                    $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง</div>';
+                }
+            } catch (Exception $e) {
+                $message = '<div class="alert alert-danger">ระบบปฏิเสธการบันทึก: ข้อความหรือไฟล์รูปภาพอาจมีขนาดใหญ่เกินกว่าที่ระบบรองรับได้ กรุณาลองเปลี่ยนเป็นรูปที่เล็กลง (แนะนำต่ำกว่า 1MB)</div>';
             }
         }
-    } else {
+    } else if (empty($message)) {
         $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีมและเลือกสีทีมให้ครบถ้วน</div>';
     }
 }
@@ -455,7 +439,7 @@ $pending_invites = $conn->query("
                 <div class="mb-3">
                     <label class="form-label fw-bold"><i class="bi bi-image me-1"></i> เลือกรูปโลโก้ทีมจากเครื่อง / โทรศัพท์</label>
                     <input type="file" name="logo_file" class="form-control" accept="image/*">
-                    <small class="text-muted d-block mt-1">* รองรับไฟล์รูปภาพ JPG, PNG, WEBP (ไม่บังคับ)</small>
+                    <small class="text-muted d-block mt-1">* หากต้องการใส่โลโก้ แนะนำให้เลือกรูปขนาดเล็ก (ไม่บังคับ)</small>
                 </div>
 
                 <button type="submit" name="create_team" class="btn btn-primary w-100 fw-bold rounded-pill mt-2">
