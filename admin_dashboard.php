@@ -124,8 +124,8 @@ $complaints = $conn->query("
                 <button class="btn btn-light btn-sm fw-bold text-success" data-bs-toggle="modal" data-bs-target="#createMatchModal">
                     <i class="bi bi-plus-circle-fill"></i> สร้างการแข่งขันใหม่
                 </button>
-                <!-- เปลี่ยนปุ่มเอา QR ออก แล้วเปลี่ยนเป็นปุ่มดูตารางการแข่งขัน -->
-                <a href="schedule_landing.php" class="btn btn-warning btn-sm fw-bold text-dark" target="_blank">
+                <!-- เอา target="_blank" ออกเพื่อให้รักษา Session -->
+                <a href="schedule_landing.php" class="btn btn-warning btn-sm fw-bold text-dark">
                     <i class="bi bi-eye-fill"></i> ดูตารางการแข่งขัน
                 </a>
             </div>

@@ -2,16 +2,12 @@
 session_start();
 require_once 'db.php';
 
-// ตรวจสอบสถานะการล็อกอิน
-$is_logged_in = isset($_SESSION['user_id']) && $_SESSION['role'] === 'student';
-$student_name = '';
+// ตรวจสอบสถานะการล็อกอินทุกรูปแบบ (นักศึกษา / แอดมิน)
+$is_logged_in = isset($_SESSION['user_id']) || isset($_SESSION['role']) || isset($_SESSION['admin_id']);
+$user_role    = $_SESSION['role'] ?? ($_SESSION['admin_id'] ? 'admin' : '');
+$user_name    = $_SESSION['fullname'] ?? ($_SESSION['name'] ?? 'ผู้ใช้งาน');
 
-if ($is_logged_in) {
-    $user_id = $_SESSION['user_id'];
-    $student_name = $_SESSION['fullname'];
-}
-
-// ดึงรายการแข่งขันกีฬาทั้งหมดที่แอดมินสร้างขึ้น (ดึงจากแมตช์ใหม่ล่าสุดก่อน)
+// ดึงรายการแข่งขันกีฬาทั้งหมดที่แอดมินสร้างขึ้น
 $latest_matches = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -28,10 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
     if ($is_logged_in) {
         $subject = trim($_POST['subject']);
         $message = trim($_POST['message']);
+        $uid     = $_SESSION['user_id'] ?? 0;
 
         if (!empty($subject) && !empty($message)) {
             $stmt_c = $conn->prepare("INSERT INTO complaints (user_id, subject, message) VALUES (?, ?, ?)");
-            $stmt_c->bind_param("iss", $_SESSION['user_id'], $subject, $message);
+            $stmt_c->bind_param("iss", $uid, $subject, $message);
             if ($stmt_c->execute()) {
                 $complaint_msg = '<div class="alert alert-success mt-2">ส่งข้อร้องเรียน/แจ้งปัญหาเรียบร้อยแล้ว แอดมินจะดำเนินการตรวจสอบครับ</div>';
             } else {
@@ -87,25 +84,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
 <div class="container px-3" style="max-width: 900px;">
 
-    <!-- แสดงชื่อผู้ใช้งานเมื่อเข้าสู่ระบบ -->
+    <!-- แสดงสถานะผู้ใช้งาน -->
     <?php if ($is_logged_in): ?>
-        <div class="d-flex justify-content-between align-items-center mb-3 px-1">
-            <span class="fw-bold text-primary"><i class="bi bi-person-circle me-1"></i> สวัสดี, <?= htmlspecialchars($student_name) ?></span>
-            <a href="student_dashboard.php" class="btn btn-outline-primary btn-sm rounded-pill">
-                <i class="bi bi-shield-fill me-1"></i> ดูทีมกีฬาของคุณ
-            </a>
+        <div class="d-flex justify-content-between align-items-center mb-3 px-1 flex-wrap gap-2">
+            <span class="fw-bold text-primary">
+                <i class="bi bi-person-circle me-1"></i> สวัสดี, <?= htmlspecialchars($user_name) ?> 
+                <?php if (!empty($user_role)): ?>
+                    <span class="badge bg-<?= $user_role === 'admin' ? 'danger' : 'info text-dark' ?> ms-1">
+                        <?= $user_role === 'admin' ? 'ผู้ดูแลระบบ' : 'นักศึกษา' ?>
+                    </span>
+                <?php endif; ?>
+            </span>
+            <div>
+                <?php if ($user_role === 'admin'): ?>
+                    <a href="admin_dashboard.php" class="btn btn-dark btn-sm rounded-pill fw-bold">
+                        <i class="bi bi-speedometer2 me-1"></i> กลับหน้าจัดการแอดมิน
+                    </a>
+                <?php else: ?>
+                    <a href="student_dashboard.php" class="btn btn-outline-primary btn-sm rounded-pill fw-bold">
+                        <i class="bi bi-shield-fill me-1"></i> ดูทีมกีฬาของคุณ
+                    </a>
+                <?php endif; ?>
+            </div>
         </div>
     <?php else: ?>
         <div class="card card-custom bg-warning bg-opacity-10 border-warning mb-4 p-3 text-center">
-            <h6 class="fw-bold text-dark mb-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> ยังไม่ได้เข้าสู่ระบบ</h6>
-            <p class="small text-muted mb-2">กรุณาเข้าสู่ระบบเพื่อจัดการทีมและส่งข้อร้องเรียน</p>
-            <a href="login.php" class="btn btn-warning btn-sm fw-bold">เข้าสู่ระบบ / สมัครสมาชิก</a>
+            <h6 class="fw-bold text-dark mb-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> ดูตารางแข่งขันได้ทันทีโดยไม่ต้องเข้าสู่ระบบ</h6>
+            <p class="small text-muted mb-2">หากต้องการจัดการทีมหรือแจ้งปัญหา สามารถเข้าสู่ระบบได้ที่นี่</p>
+            <a href="login.php" class="btn btn-warning btn-sm fw-bold px-4 rounded-pill">เข้าสู่ระบบ / สมัครสมาชิก</a>
         </div>
     <?php endif; ?>
 
     <?= $complaint_msg ?>
 
-    <!-- ส่วนที่ 2: ตารางการแข่งขันประจำวัน -->
+    <!-- ตารางการแข่งขันประจำวัน -->
     <div class="card card-custom mb-4" id="match-schedule">
         <div class="card-header bg-white border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-calendar-event me-1"></i> รายการแข่งขันกีฬาประจำวัน</h6>
@@ -152,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
         </div>
     </div>
 
-    <!-- ส่วนที่ 3: ปุ่มกด Action -->
+    <!-- ปุ่มกดส่งข้อร้องเรียน -->
     <div class="d-grid gap-2 mb-4">
         <?php if ($is_logged_in): ?>
             <button class="btn btn-outline-danger btn-lg rounded-pill shadow-sm" data-bs-toggle="modal" data-bs-target="#complaintModal">
