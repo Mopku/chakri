@@ -18,8 +18,8 @@ $latest_matches = $conn->query("
     ORDER BY m.id DESC
 ");
 
-// ดึงรายชื่อทีมทั้งหมดในระบบให้เลือกในฟอร์มแจ้งปัญหา
-$teams_dropdown = $conn->query("SELECT id, team_name, team_color FROM teams ORDER BY team_name ASC");
+// ดึงรายชื่อทีมทั้งหมดในระบบพร้อมชนิดกีฬา ให้เลือกในฟอร์มแจ้งปัญหา
+$teams_dropdown = $conn->query("SELECT id, team_name, team_color, sport_name FROM teams ORDER BY sport_name ASC, team_name ASC");
 
 // จัดการการส่งข้อร้องเรียน/แจ้งปัญหา
 $complaint_msg = '';
@@ -32,12 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
 
         // หากมีการเลือกทีม ให้นำชื่อทีมระบุเพิ่มเข้าไปในรายละเอียดข้อความ
         if ($team_id) {
-            $stmt_t = $conn->prepare("SELECT team_name FROM teams WHERE id = ?");
+            $stmt_t = $conn->prepare("SELECT team_name, sport_name FROM teams WHERE id = ?");
             $stmt_t->bind_param("i", $team_id);
             $stmt_t->execute();
             $res_t = $stmt_t->get_result();
             if ($row_t = $res_t->fetch_assoc()) {
-                $message = "[เกี่ยวกับทีม: " . $row_t['team_name'] . "]\n" . $message;
+                $sport_txt = !empty($row_t['sport_name']) ? " (" . $row_t['sport_name'] . ")" : "";
+                $message = "[เกี่ยวกับทีม: " . $row_t['team_name'] . $sport_txt . "]\n" . $message;
             }
         }
 
@@ -213,14 +214,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_complaint'])) 
                         </select>
                     </div>
 
-                    <!-- ดร็อปดาวน์เลือกทีมกีฬาในระบบ -->
+                    <!-- ดร็อปดาวน์เลือกทีมกีฬาในระบบ (แสดงชื่อทีม + สี + ชนิดกีฬา) -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">เลือกทีมกีฬาที่ต้องการแจ้งปัญหา (ถ้ามี)</label>
                         <select name="team_id" class="form-select">
                             <option value="">-- ไม่ระบุ / แจ้งปัญหาระบบทั่วไป --</option>
                             <?php if ($teams_dropdown && $teams_dropdown->num_rows > 0): ?>
                                 <?php while ($tm = $teams_dropdown->fetch_assoc()): ?>
-                                    <option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['team_name']) ?> (<?= htmlspecialchars($tm['team_color']) ?>)</option>
+                                    <option value="<?= $tm['id'] ?>">
+                                        <?= htmlspecialchars($tm['team_name']) ?> (<?= htmlspecialchars($tm['team_color']) ?>) 
+                                        <?= !empty($tm['sport_name']) ? ' - [ ' . htmlspecialchars($tm['sport_name']) . ' ]' : '' ?>
+                                    </option>
                                 <?php endwhile; ?>
                             <?php endif; ?>
                         </select>
