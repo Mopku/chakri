@@ -354,12 +354,11 @@ $complaints = $conn->query("
                         <input type="text" name="location" class="form-control" placeholder="เช่น สนาม 1 (คอร์ท A) อาคารศูนย์กีฬา" required>
                     </div>
 
-                    <!-- ล็อคสถานะแมตช์เริ่มต้นให้เป็น "รอดำเนินการ" อย่างเดียว -->
+                    <!-- แสดงผลสถานะแมตช์เริ่มต้นแบบไม่มีลูกศรชี้ลง -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">สถานะแมตช์เริ่มต้น</label>
-                        <select name="status" class="form-select bg-light text-dark fw-bold" readonly style="pointer-events: none;">
-                            <option value="upcoming" selected>⏳ รอดำเนินการ</option>
-                        </select>
+                        <input type="text" class="form-control bg-light text-dark fw-bold" value="⏳ รอดำเนินการ" readonly>
+                        <input type="hidden" name="status" value="upcoming">
                     </div>
                 </div>
                 <div class="modal-footer">
