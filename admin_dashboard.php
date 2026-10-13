@@ -89,10 +89,6 @@ $complaints = $conn->query("
     JOIN users u ON c.user_id = u.id 
     ORDER BY c.created_at DESC
 ");
-
-// สร้าง QR Code ลิงก์สำหรับเข้าชมหน้าตารางการแข่งขัน
-$schedule_landing_url = 'https://chakri-production.up.railway.app/schedule_landing.php';
-$schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . urlencode($schedule_landing_url);
 ?>
 
 <!DOCTYPE html>
@@ -120,7 +116,7 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
 
     <?= $message ?>
 
-    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน & QR Code รับชมตารางแข่ง -->
+    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน & ปุ่มลิงก์ไปหน้าชมตารางแข่ง -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fw-bold"><i class="bi bi-calendar-event-fill me-2"></i> จัดการตารางการแข่งขันกีฬา</h5>
@@ -128,9 +124,10 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
                 <button class="btn btn-light btn-sm fw-bold text-success" data-bs-toggle="modal" data-bs-target="#createMatchModal">
                     <i class="bi bi-plus-circle-fill"></i> สร้างการแข่งขันใหม่
                 </button>
-                <button class="btn btn-warning btn-sm fw-bold text-dark" data-bs-toggle="modal" data-bs-target="#qrScheduleModal">
-                    <i class="bi bi-qr-code"></i> QR Code เว็บชมตารางแข่งขัน
-                </button>
+                <!-- เปลี่ยนปุ่มเอา QR ออก แล้วเปลี่ยนเป็นปุ่มดูตารางการแข่งขัน -->
+                <a href="schedule_landing.php" class="btn btn-warning btn-sm fw-bold text-dark" target="_blank">
+                    <i class="bi bi-eye-fill"></i> ดูตารางการแข่งขัน
+                </a>
             </div>
         </div>
         <div class="card-body p-0">
@@ -353,26 +350,6 @@ $schedule_qr_api = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&dat
                     <button type="submit" name="create_match" class="btn btn-success fw-bold"><i class="bi bi-plus-lg"></i> สร้างตารางแข่ง</button>
                 </div>
             </form>
-        </div>
-    </div>
-</div>
-
-<!-- Modal สำหรับแสดง QR Code เว็บไซต์เข้าชมตารางแข่งขัน -->
-<div class="modal fade" id="qrScheduleModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content text-center p-3">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold"><i class="bi bi-qr-code"></i> QR Code เว็บไซต์ตารางการแข่งขัน</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body my-2">
-                <img src="<?= htmlspecialchars($schedule_qr_api) ?>" alt="QR Code Schedule" class="img-fluid border p-2 rounded shadow-sm mb-3">
-                <p class="text-muted small mb-1">สแกน QR Code นี้เพื่อเข้าสู่หน้าชมตารางแข่งขันและกิจกรรม</p>
-                <small class="text-primary d-block text-break">URL: <?= htmlspecialchars($schedule_landing_url) ?></small>
-            </div>
-            <div class="modal-footer justify-content-center">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิดหน้าต่าง</button>
-            </div>
         </div>
     </div>
 </div>
