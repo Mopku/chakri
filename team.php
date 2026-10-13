@@ -17,6 +17,42 @@ if ($chk_col && $chk_col->num_rows > 0) {
     $has_sport_col = true;
 }
 
+// ฟังก์ชันย่อขนาดรูปภาพโลโก้เพื่อป้องกัน Database Overflow / Error 500
+function resize_image_base64($file_tmp, $max_width = 200, $max_height = 200) {
+    list($width, $height, $type) = getimagesize($file_tmp);
+    if (!$width || !$height) return '';
+
+    switch ($type) {
+        case IMAGETYPE_JPEG: $src = imagecreatefromjpeg($file_tmp); break;
+        case IMAGETYPE_PNG:  $src = imagecreatefrompng($file_tmp); break;
+        case IMAGETYPE_WEBP: $src = imagecreatefromwebp($file_tmp); break;
+        default: return '';
+    }
+
+    $ratio = min($max_width / $width, $max_height / $height);
+    $new_width  = round($width * $ratio);
+    $new_height = round($height * $ratio);
+
+    $dst = imagecreatetruecolor($new_width, $new_height);
+    
+    // รักษาความโปร่งใสสำหรับไฟล์ PNG/WEBP
+    if ($type == IMAGETYPE_PNG || $type == IMAGETYPE_WEBP) {
+        imagealphablending($dst, false);
+        imagesavealpha($dst, true);
+    }
+
+    imagecopyresampled($dst, $src, 0, 0, 0, 0, $new_width, $new_height, $width, $height);
+
+    ob_start();
+    imagejpeg($dst, null, 75); // บีบอัดไฟล์ JPEG คุณภาพ 75%
+    $data = ob_get_clean();
+
+    imagedestroy($src);
+    imagedestroy($dst);
+
+    return 'data:image/jpeg;base64,' . base64_encode($data);
+}
+
 // 1. จัดการสร้างทีมใหม่
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
@@ -24,16 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $sport_name = trim($_POST['sport_name'] ?? '');
     $logo_url   = '';
 
-    // จัดการอัปโหลดไฟล์รูปภาพจากโทรศัพท์หรือคอมพิวเตอร์
+    // จัดการอัปโหลดไฟล์รูปภาพและย่อขนาด
     if (isset($_FILES['logo_file']) && $_FILES['logo_file']['error'] === UPLOAD_ERR_OK) {
-        $file_tmp  = $_FILES['logo_file']['tmp_name'];
-        $file_type = mime_content_type($file_tmp);
-        
-        // ตรวจสอบว่าเป็นไฟล์รูปภาพจริงหรือไม่
-        if (strpos($file_type, 'image/') === 0) {
-            $file_data = file_get_contents($file_tmp);
-            // แปลงรูปภาพเป็น Base64 Data URL สำหรับเก็บลงตารางและแสดงผลทันที
-            $logo_url  = 'data:' . $file_type . ';base64,' . base64_encode($file_data);
+        $file_tmp = $_FILES['logo_file']['tmp_name'];
+        if (is_uploaded_file($file_tmp)) {
+            $logo_url = resize_image_base64($file_tmp);
         }
     }
 
@@ -68,6 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
 
                 header("Location: student_dashboard.php");
                 exit();
+            } else {
+                $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง</div>';
             }
         }
     } else {
@@ -383,7 +416,7 @@ $pending_invites = $conn->query("
             </ul>
         </div>
 
-    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ (รองรับการเลือกไฟล์รูปภาพจากโทรศัพท์/คอมพิวเตอร์) -->
+    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ -->
     <?php else: ?>
         <div class="card shadow-sm border-0 p-4">
             <h5 class="fw-bold text-dark mb-3"><i class="bi bi-plus-circle-fill text-primary me-1"></i> คุณยังไม่มีทีม สร้างทีมใหม่</h5>
