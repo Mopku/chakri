@@ -10,47 +10,48 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
 $user_id = $_SESSION['user_id'];
 $message = '';
 
-// 1. จัดการสร้างทีมใหม่ (เช็กสีทีมซ้ำ และชื่อทีมซ้ำ)
+// 1. จัดการสร้างทีมใหม่ (ยอมให้สีซ้ำได้ถ้าเป็นคนละประเภทกีฬา)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
     $team_name  = trim($_POST['team_name']);
     $team_color = trim($_POST['team_color']);
-    $logo_url   = trim($_POST['logo_url']); // ลิงก์ URL รูปโลโก้
+    $sport_name = trim($_POST['sport_name']);
+    $logo_url   = trim($_POST['logo_url']);
 
-    if (!empty($team_name) && !empty($team_color)) {
-        // ตรวจสอบว่ามีสีประจำทีมนี้ถูกใช้งานไปแล้วหรือไม่
-        $check_color = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ?");
-        $check_color->bind_param("s", $team_color);
-        $check_color->execute();
-        $existing_color = $check_color->get_result()->fetch_assoc();
+    if (!empty($team_name) && !empty($team_color) && !empty($sport_name)) {
+        // 🔍 ตรวจสอบว่ามี [สีประจำทีม + ชนิดกีฬา] เดียวกันนี้ในระบบแล้วหรือยัง
+        $check_color_sport = $conn->prepare("SELECT id, team_name FROM teams WHERE team_color = ? AND sport_name = ?");
+        $check_color_sport->bind_param("ss", $team_color, $sport_name);
+        $check_color_sport->execute();
+        $existing_team = $check_color_sport->get_result()->fetch_assoc();
 
-        if ($existing_color) {
-            $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_color['team_name']) . '" กรุณาเลือกสีอื่น</div>';
+        if ($existing_team) {
+            $message = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> สีทีม <strong>' . htmlspecialchars($team_color) . '</strong> ในกีฬาประเภท <strong>' . htmlspecialchars($sport_name) . '</strong> มีผู้ใช้งานแล้วโดยทีม "' . htmlspecialchars($existing_team['team_name']) . '" กรุณาเลือกสีอื่น</div>';
         } else {
-            // ตรวจสอบว่าชื่อทีมซ้ำหรือไม่
-            $check_name = $conn->prepare("SELECT id FROM teams WHERE team_name = ?");
-            $check_name->bind_param("s", $team_name);
+            // 🔍 ตรวจสอบชื่อทีมซ้ำในประเภทกีฬาเดียวกัน
+            $check_name = $conn->prepare("SELECT id FROM teams WHERE team_name = ? AND sport_name = ?");
+            $check_name->bind_param("ss", $team_name, $sport_name);
             $check_name->execute();
 
             if ($check_name->get_result()->num_rows > 0) {
-                $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> ชื่อทีม "' . htmlspecialchars($team_name) . '" นี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น</div>';
+                $message = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle-fill me-1"></i> ชื่อทีม "' . htmlspecialchars($team_name) . '" สำหรับกีฬาประเภทนี้ถูกใช้งานแล้ว กรุณาใช้ชื่ออื่น</div>';
             } else {
-                // บันทึกสร้างทีมใหม่
-                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, logo_url, leader_id) VALUES (?, ?, ?, ?)");
-                $stmt->bind_param("sssi", $team_name, $team_color, $logo_url, $user_id);
+                $stmt = $conn->prepare("INSERT INTO teams (team_name, team_color, sport_name, logo_url, leader_id) VALUES (?, ?, ?, ?, ?)");
+                $stmt->bind_param("ssssi", $team_name, $team_color, $sport_name, $logo_url, $user_id);
                 
                 if ($stmt->execute()) {
                     $new_team_id = $stmt->insert_id;
-                    // บันทึกหัวหน้าทีมเข้าเป็นสมาชิกร่วมทีมทันที (status = accepted)
                     $stmt_m = $conn->prepare("INSERT INTO team_members (team_id, user_id, status) VALUES (?, ?, 'accepted')");
                     $stmt_m->bind_param("ii", $new_team_id, $user_id);
                     $stmt_m->execute();
 
                     $message = '<div class="alert alert-success"><i class="bi bi-check-circle-fill me-1"></i> สร้างทีมสำเร็จเรียบร้อยแล้ว!</div>';
+                    header("Location: student_dashboard.php");
+                    exit();
                 }
             }
         }
     } else {
-        $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีมและเลือกสีทีมให้ครบถ้วน</div>';
+        $message = '<div class="alert alert-warning">กรุณากรอกข้อมูลชื่อทีม ชนิดกีฬา และเลือกสีทีมให้ครบถ้วน</div>';
     }
 }
 
@@ -89,12 +90,56 @@ if (isset($_GET['action']) && isset($_GET['member_id'])) {
     exit();
 }
 
-// 4. หัวหน้าทีมเตะสมาชิกร่วมทีมออก
+// 4. สมาชิกกด "ออกจากทีม"
+if (isset($_GET['leave_team_id'])) {
+    $leave_team_id = intval($_GET['leave_team_id']);
+
+    $check_match = $conn->prepare("SELECT id FROM matches WHERE team1_id = ? OR team2_id = ?");
+    $check_match->bind_param("ii", $leave_team_id, $leave_team_id);
+    $check_match->execute();
+
+    if ($check_match->get_result()->num_rows > 0) {
+        echo "<script>alert('ไม่สามารถออกจากทีมได้ เนื่องจากทีมนี้ถูกจัดตารางการแข่งขันเรียบร้อยแล้ว!'); window.location='team.php';</script>";
+        exit();
+    }
+
+    $chk_leader = $conn->prepare("SELECT leader_id FROM teams WHERE id = ?");
+    $chk_leader->bind_param("i", $leave_team_id);
+    $chk_leader->execute();
+    $team_info = $chk_leader->get_result()->fetch_assoc();
+
+    if ($team_info) {
+        $stmt_leave = $conn->prepare("DELETE FROM team_members WHERE team_id = ? AND user_id = ?");
+        $stmt_leave->bind_param("ii", $leave_team_id, $user_id);
+        $stmt_leave->execute();
+
+        if ($team_info['leader_id'] == $user_id) {
+            $get_next = $conn->prepare("SELECT user_id FROM team_members WHERE team_id = ? AND status = 'accepted' ORDER BY id ASC LIMIT 1");
+            $get_next->bind_param("i", $leave_team_id);
+            $get_next->execute();
+            $next_leader = $get_next->get_result()->fetch_assoc();
+
+            if ($next_leader) {
+                $up_leader = $conn->prepare("UPDATE teams SET leader_id = ? WHERE id = ?");
+                $up_leader->bind_param("ii", $next_leader['user_id'], $leave_team_id);
+                $up_leader->execute();
+            } else {
+                $del_team = $conn->prepare("DELETE FROM teams WHERE id = ?");
+                $del_team->bind_param("i", $leave_team_id);
+                $del_team->execute();
+            }
+        }
+
+        echo "<script>alert('คุณได้ออกจากทีมเรียบร้อยแล้ว'); window.location='team.php';</script>";
+        exit();
+    }
+}
+
+// 5. เตะสมาชิกร่วมทีมออก / ยกเลิกคำเชิญ
 if (isset($_GET['kick_user']) && isset($_GET['team_id'])) {
     $kick_user_id = intval($_GET['kick_user']);
     $team_id      = intval($_GET['team_id']);
 
-    // ตรวจสอบสิทธิ์ว่าผู้ใช้ปัจจุบันเป็นหัวหน้าทีมนั้นหรือไม่ และไม่ให้เตะตัวเอง
     $check_leader = $conn->prepare("SELECT id FROM teams WHERE id = ? AND leader_id = ?");
     $check_leader->bind_param("ii", $team_id, $user_id);
     $check_leader->execute();
@@ -103,22 +148,20 @@ if (isset($_GET['kick_user']) && isset($_GET['team_id'])) {
         $stmt_kick = $conn->prepare("DELETE FROM team_members WHERE team_id = ? AND user_id = ?");
         $stmt_kick->bind_param("ii", $team_id, $kick_user_id);
         $stmt_kick->execute();
-        echo "<script>alert('ลบสมาชิกออกจากทีมเรียบร้อยแล้ว'); window.location='team.php';</script>";
+        echo "<script>alert('ลบสมาชิก / ยกเลิกคำเชิญเรียบร้อยแล้ว'); window.location='team.php';</script>";
         exit();
     }
 }
 
-// 5. หัวหน้าทีมยกเลิก / ลบทีม (ตรวจสอบว่าไม่ได้ถูกจัดลงแข่งอยู่)
+// 6. ยกเลิก / ลบทีม
 if (isset($_GET['delete_team_id'])) {
     $del_team_id = intval($_GET['delete_team_id']);
 
-    // ตรวจสอบว่าเป็นหัวหน้าทีมตัวจริงหรือไม่
     $check_leader = $conn->prepare("SELECT id FROM teams WHERE id = ? AND leader_id = ?");
     $check_leader->bind_param("ii", $del_team_id, $user_id);
     $check_leader->execute();
 
     if ($check_leader->get_result()->num_rows > 0) {
-        // เช็กว่าทีมนี้ถูกนำไปจัดการแข่งขันอยู่หรือเปล่า
         $check_match = $conn->prepare("SELECT id FROM matches WHERE team1_id = ? OR team2_id = ?");
         $check_match->bind_param("ii", $del_team_id, $del_team_id);
         $check_match->execute();
@@ -127,7 +170,6 @@ if (isset($_GET['delete_team_id'])) {
             echo "<script>alert('ไม่สามารถยกเลิกทีมได้ เนื่องจากทีมของคุณถูกแอดมินนำไปจัดตารางการแข่งขันเรียบร้อยแล้ว!'); window.location='team.php';</script>";
             exit();
         } else {
-            // ลบทีม
             $stmt_del_t = $conn->prepare("DELETE FROM teams WHERE id = ?");
             $stmt_del_t->bind_param("i", $del_team_id);
             $stmt_del_t->execute();
@@ -150,7 +192,7 @@ $team_stmt->bind_param("i", $user_id);
 $team_stmt->execute();
 $my_team = $team_stmt->get_result()->fetch_assoc();
 
-// ตรวจสอบว่าทีมนี้ถูกจัดตารางการแข่งขันไว้แล้วหรือยัง
+// ตรวจสอบสถานะการจัดแข่ง
 $is_in_match = false;
 if ($my_team) {
     $chk_m = $conn->prepare("SELECT id FROM matches WHERE team1_id = ? OR team2_id = ?");
@@ -161,7 +203,7 @@ if ($my_team) {
     }
 }
 
-// ถ้ามีทีมแล้ว ดึงรายชื่อสมาชิกในทีม
+// ดึงรายชื่อสมาชิกในทีม
 $team_members_list = null;
 if ($my_team) {
     $m_stmt = $conn->prepare("
@@ -169,22 +211,14 @@ if ($my_team) {
         FROM team_members tm
         JOIN users u ON tm.user_id = u.id
         WHERE tm.team_id = ?
+        ORDER BY (u.id = ?) DESC, tm.status ASC
     ");
-    $m_stmt->bind_param("i", $my_team['id']);
+    $m_stmt->bind_param("ii", $my_team['id'], $my_team['leader_id']);
     $m_stmt->execute();
     $team_members_list = $m_stmt->get_result();
 }
 
-// ดึงรายการสีทีมที่ถูกใช้ไปแล้ว
-$used_colors = [];
-$color_res = $conn->query("SELECT team_color FROM teams");
-if ($color_res) {
-    while ($c = $color_res->fetch_assoc()) {
-        $used_colors[] = $c['team_color'];
-    }
-}
-
-// ดึงรายชื่อนักศึกษาคนอื่นที่ยังไม่มีทีม (สำหรับค้นหาชวนเข้าทีม)
+// ดึงรายชื่อนักศึกษาคนอื่นที่ยังไม่มีทีม
 $other_students = $conn->query("
     SELECT id, fullname, student_id 
     FROM users 
@@ -192,9 +226,9 @@ $other_students = $conn->query("
     ORDER BY fullname ASC
 ");
 
-// ดึงรายการคำเชิญเข้าทีมที่รอยืนยัน (Pending Invites)
+// ดึงรายการคำเชิญเข้าทีมที่รอยืนยัน
 $pending_invites = $conn->query("
-    SELECT tm.id AS member_id, t.team_name, t.team_color, u.fullname AS leader_name
+    SELECT tm.id AS member_id, t.team_name, t.team_color, t.sport_name, u.fullname AS leader_name
     FROM team_members tm
     JOIN teams t ON tm.team_id = t.id
     JOIN users u ON t.leader_id = u.id
@@ -232,7 +266,8 @@ $pending_invites = $conn->query("
                 <?php while ($inv = $pending_invites->fetch_assoc()): ?>
                     <div class="d-flex justify-content-between align-items-center border-bottom pb-2 mb-2">
                         <div>
-                            <strong><?= htmlspecialchars($inv['team_name']) ?></strong> (<?= htmlspecialchars($inv['team_color']) ?>)
+                            <strong><?= htmlspecialchars($inv['team_name']) ?></strong> 
+                            (<?= htmlspecialchars($inv['team_color']) ?> - <?= htmlspecialchars($inv['sport_name']) ?>)
                             <br><small class="text-muted">หัวหน้าทีม: <?= htmlspecialchars($inv['leader_name']) ?></small>
                         </div>
                         <div>
@@ -258,21 +293,29 @@ $pending_invites = $conn->query("
                 <?php endif; ?>
 
                 <h3 class="fw-bold mb-1"><?= htmlspecialchars($my_team['team_name']) ?></h3>
+                <span class="badge bg-primary text-white me-1"><?= htmlspecialchars($my_team['sport_name'] ?? 'กีฬา') ?></span>
                 <span class="badge bg-info text-dark mb-3"><?= htmlspecialchars($my_team['team_color']) ?></span>
                 <p class="small text-muted mb-2">หัวหน้าทีม: <?= htmlspecialchars($my_team['leader_name']) ?></p>
 
-                <!-- ปุ่มสำหรับหัวหน้าทีมยกเลิก/ลบทีม -->
-                <?php if ($my_team['leader_id'] == $user_id): ?>
-                    <?php if ($is_in_match): ?>
-                        <div class="badge bg-success-subtle text-success border border-success p-2 mt-2 d-inline-block">
-                            <i class="bi bi-check-circle-fill me-1"></i> ทีมนี้ถูกจัดลงตารางการแข่งขันแล้ว (ไม่สามารถยกเลิกทีมได้)
-                        </div>
-                    <?php else: ?>
-                        <a href="team.php?delete_team_id=<?= $my_team['id'] ?>" class="btn btn-outline-danger btn-sm rounded-pill mt-1" onclick="return confirm('คุณต้องการยกเลิกและลบทีมนี้ใช่หรือไม่? สมาชิกทุกคนจะถูกถอดออกจากทีม');">
-                            <i class="bi bi-trash-fill me-1"></i> ยกเลิก / ลบทีมนี้
+                <div class="d-flex justify-content-center gap-2 flex-wrap mt-2">
+                    <?php if (!$is_in_match): ?>
+                        <a href="team.php?leave_team_id=<?= $my_team['id'] ?>" class="btn btn-warning btn-sm rounded-pill fw-bold text-dark" onclick="return confirm('คุณแน่ใจหรือไม่ว่าต้องการออกจากทีมนี้?');">
+                            <i class="bi bi-box-arrow-right me-1"></i> ออกจากทีม
                         </a>
                     <?php endif; ?>
-                <?php endif; ?>
+
+                    <?php if ($my_team['leader_id'] == $user_id): ?>
+                        <?php if ($is_in_match): ?>
+                            <div class="badge bg-success-subtle text-success border border-success p-2 d-inline-block">
+                                <i class="bi bi-check-circle-fill me-1"></i> ทีมนี้ถูกจัดลงตารางการแข่งขันแล้ว
+                            </div>
+                        <?php else: ?>
+                            <a href="team.php?delete_team_id=<?= $my_team['id'] ?>" class="btn btn-outline-danger btn-sm rounded-pill" onclick="return confirm('คุณต้องการยกเลิกและลบทีมนี้ใช่หรือไม่?');">
+                                <i class="bi bi-trash-fill me-1"></i> ยกเลิก &amp; ลบทีมนี้
+                            </a>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 
@@ -295,19 +338,21 @@ $pending_invites = $conn->query("
                                 <?php if ($m['member_user_id'] == $my_team['leader_id']): ?>
                                     <span class="badge bg-warning text-dark ms-1">หัวหน้าทีม</span>
                                 <?php endif; ?>
+                                <?php if ($m['member_user_id'] == $user_id): ?>
+                                    <span class="badge bg-info text-dark ms-1">คุณ</span>
+                                <?php endif; ?>
                                 <small class="text-muted d-block">รหัส: <?= htmlspecialchars($m['student_id'] ?: '-') ?></small>
                             </div>
                             <div class="d-flex align-items-center gap-2">
                                 <?php if ($m['status'] === 'accepted'): ?>
                                     <span class="badge bg-success">เข้าร่วมแล้ว</span>
                                 <?php else: ?>
-                                    <span class="badge bg-secondary">รอตอบรับ</span>
+                                    <span class="badge bg-secondary opacity-75">รอตอบรับ</span>
                                 <?php endif; ?>
 
-                                <!-- ปุ่มสำหรับหัวหน้าทีมกดเตะสมาชิกออก -->
                                 <?php if ($my_team['leader_id'] == $user_id && $m['member_user_id'] != $user_id): ?>
-                                    <a href="team.php?kick_user=<?= $m['member_user_id'] ?>&team_id=<?= $my_team['id'] ?>" class="btn btn-outline-danger btn-sm py-0 px-2" onclick="return confirm('คุณต้องการลบคุณ <?= htmlspecialchars($m['fullname']) ?> ออกจากทีมใช่หรือไม่?');" title="เตะออกจากทีม">
-                                        <i class="bi bi-person-x-fill"></i>
+                                    <a href="team.php?kick_user=<?= $m['member_user_id'] ?>&team_id=<?= $my_team['id'] ?>" class="btn btn-outline-danger btn-sm py-0 px-2" onclick="return confirm('คุณต้องการลบคุณ <?= htmlspecialchars($m['fullname']) ?> ออกจากทีมใช่หรือไม่?');">
+                                        <i class="bi bi-person-x-fill"></i> เตะออก
                                     </a>
                                 <?php endif; ?>
                             </div>
@@ -317,7 +362,7 @@ $pending_invites = $conn->query("
             </ul>
         </div>
 
-    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ (ถ้ายังไม่มีทีม) -->
+    <!-- ส่วนที่ 3: แบบฟอร์มสร้างทีมใหม่ (ปลดล็อกให้เลือกสีซ้ำข้ามชนิดกีฬาได้) -->
     <?php else: ?>
         <div class="card shadow-sm border-0 p-4">
             <h5 class="fw-bold text-dark mb-3"><i class="bi bi-plus-circle-fill text-primary me-1"></i> คุณยังไม่มีทีม สร้างทีมใหม่</h5>
@@ -328,27 +373,30 @@ $pending_invites = $conn->query("
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label fw-bold">เลือกสีประจำทีม (เลือกได้เฉพาะสีที่ยังไม่มีทีมสร้าง)</label>
+                    <label class="form-label fw-bold">ชนิดกีฬาที่ต้องการลงแข่งขัน</label>
+                    <select name="sport_name" class="form-select" required>
+                        <option value="">-- เลือกประเภทกีฬา --</option>
+                        <option value="ฟุตบอล">⚽ ฟุตบอล</option>
+                        <option value="บาสเกตบอล">🏀 บาสเกตบอล</option>
+                        <option value="วอลเลย์บอล">🏐 วอลเลย์บอล</option>
+                        <option value="แบดมินตัน">🏸 แบดมินตัน</option>
+                        <option value="เปตอง">⚪ เปตอง</option>
+                        <option value="E-Sports">🎮 E-Sports</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">เลือกสีประจำทีม</label>
                     <select name="team_color" class="form-select" required>
                         <option value="">-- เลือกสีประจำทีม --</option>
-                        <?php 
-                            $all_colors = [
-                                "🔴 ทีมสีแดง" => "🔴 ทีมสีแดง",
-                                "🔵 ทีมสีน้ำเงิน" => "🔵 ทีมสีน้ำเงิน",
-                                "🟡 ทีมสีเหลือง" => "🟡 ทีมสีเหลือง",
-                                "🟢 ทีมสีเขียว" => "🟢 ทีมสีเขียว",
-                                "🟠 ทีมสีแสด/ส้ม" => "🟠 ทีมสีแสด/ส้ม",
-                                "🟣 ทีมสีม่วง" => "🟣 ทีมสีม่วง"
-                            ];
-
-                            foreach ($all_colors as $key => $val) {
-                                $is_used = in_array($key, $used_colors);
-                                $disabled = $is_used ? 'disabled' : '';
-                                $label_text = $is_used ? $val . ' (มีผู้เลือกแล้ว)' : $val;
-                                echo "<option value=\"$key\" $disabled>$label_text</option>";
-                            }
-                        ?>
+                        <option value="🔴 ทีมสีแดง">🔴 ทีมสีแดง</option>
+                        <option value="🔵 ทีมสีน้ำเงิน">🔵 ทีมสีน้ำเงิน / สีฟ้า</option>
+                        <option value="🟡 ทีมสีเหลือง">🟡 ทีมสีเหลือง</option>
+                        <option value="🟢 ทีมสีเขียว">🟢 ทีมสีเขียว</option>
+                        <option value="🟠 ทีมสีแสด/ส้ม">🟠 ทีมสีแสด/ส้ม</option>
+                        <option value="🟣 ทีมสีม่วง">🟣 ทีมสีม่วง</option>
                     </select>
+                    <small class="text-muted mt-1 d-block">* สามารถเลือกสีซ้ำกับกีฬาประเภทอื่นได้ (ห้ามสร้างทีมสีซ้ำในประเภทกีฬาเดียวกัน)</small>
                 </div>
 
                 <div class="mb-3">
