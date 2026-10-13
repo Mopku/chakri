@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
     $team2_id   = intval($_POST['team2_id']);
     $match_time = trim($_POST['match_time']);
     $location   = trim($_POST['location']);
-    $status     = trim($_POST['status']);
+    $status     = trim($_POST['status'] ?? 'upcoming');
 
     if (!empty($sport_name) && $team1_id > 0 && $team2_id > 0 && $team1_id !== $team2_id) {
         $stmt_m = $conn->prepare("INSERT INTO matches (sport_name, team1_id, team2_id, match_time, location, status) VALUES (?, ?, ?, ?, ?, ?)");
@@ -171,7 +171,7 @@ $complaints = $conn->query("
                                     <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= htmlspecialchars($mc['match_time']) ?></small></td>
                                     <td><small class="text-muted"><i class="bi bi-geo-alt me-1"></i><?= htmlspecialchars($mc['location']) ?></small></td>
                                     
-                                    <!-- ฟอร์มกดอัปเดตสถานะแมตช์ได้ทันที -->
+                                    <!-- ฟอร์มกดอัปเดตสถานะแมตช์ -->
                                     <td class="text-center">
                                         <form method="POST" class="d-inline-block">
                                             <input type="hidden" name="match_id" value="<?= $mc['id'] ?>">
@@ -354,12 +354,11 @@ $complaints = $conn->query("
                         <input type="text" name="location" class="form-control" placeholder="เช่น สนาม 1 (คอร์ท A) อาคารศูนย์กีฬา" required>
                     </div>
 
+                    <!-- ล็อคสถานะแมตช์เริ่มต้นให้เป็น "รอดำเนินการ" อย่างเดียว -->
                     <div class="mb-3">
                         <label class="form-label fw-bold">สถานะแมตช์เริ่มต้น</label>
-                        <select name="status" class="form-select" required>
+                        <select name="status" class="form-select bg-light text-dark fw-bold" readonly style="pointer-events: none;">
                             <option value="upcoming" selected>⏳ รอดำเนินการ</option>
-                            <option value="live">🔴 กำลังแข่งขัน (LIVE)</option>
-                            <option value="finished">✅ แข่งเสร็จแล้ว</option>
                         </select>
                     </div>
                 </div>
