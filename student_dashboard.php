@@ -14,7 +14,7 @@ $student_id = $_SESSION['student_id'] ?? '-';
 $message = '';
 
 // =========================================================
-// 📌 ระบบตรวจสอบและสร้างตาราง notifications อัตโนมัติ (ป้องกัน Error 500)
+// 📌 ระบบตรวจสอบและสร้างตาราง notifications อัตโนมัติ
 // =========================================================
 $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -145,13 +145,13 @@ $my_team = $team_stmt->get_result()->fetch_assoc();
 
     <?= $message ?>
 
-    <!-- 🔔 การแจ้งเตือนจากแอดมิน (สร้างตารางแข่งขัน) -->
+    <!-- 🔔 การแจ้งเตือนจากแอดมิน (ตารางแข่งใหม่ / คำตอบกลับปัญหา) -->
     <?php if ($noti_count > 0 && $notifications_list): ?>
         <?php while ($noti = $notifications_list->fetch_assoc()): ?>
             <div class="alert alert-info d-flex align-items-center shadow-sm border-2 border-info mb-4">
                 <i class="bi bi-info-circle-fill text-info fs-2 me-3"></i>
                 <div class="flex-grow-1">
-                    <h6 class="mb-1 fw-bold text-dark">แจ้งเตือนตารางแข่งขันใหม่!</h6>
+                    <h6 class="mb-1 fw-bold text-dark">แจ้งเตือนจากผู้ดูแลระบบ</h6>
                     <p class="mb-0 text-dark"><?= htmlspecialchars($noti['message']) ?></p>
                     <small class="text-muted"><i class="bi bi-clock me-1"></i> <?= date('d/m/Y H:i', strtotime($noti['created_at'])) ?> น.</small>
                 </div>

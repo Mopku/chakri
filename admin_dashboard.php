@@ -10,6 +10,42 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
 
 $message = '';
 
+// =========================================================
+// 📌 ระบบแอดมินตอบกลับปัญหา/ข้อร้องเรียน
+// =========================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reply_complaint'])) {
+    $complaint_id = intval($_POST['complaint_id']);
+    $student_user_id = intval($_POST['student_user_id']);
+    $reply_text = trim($_POST['admin_reply']);
+
+    if ($complaint_id > 0 && !empty($reply_text)) {
+        // อัปเดตข้อความตอบกลับลงในฐานข้อมูล complaints
+        $stmt_rep = $conn->prepare("UPDATE complaints SET admin_reply = ? WHERE id = ?");
+        $stmt_rep->bind_param("si", $reply_text, $complaint_id);
+        
+        if ($stmt_rep->execute()) {
+            // สร้างตาราง notifications อัตโนมัติเผื่อยังไม่มี
+            $conn->query("CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                message TEXT NOT NULL,
+                is_read TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )");
+
+            // ส่งแจ้งเตือนตรงไปหานักศึกษาเจ้าของปัญหา
+            $noti_msg = "💬 แอดมินได้ตอบกลับข้อร้องเรียนของคุณแล้ว: \"{$reply_text}\"";
+            $stmt_notif = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
+            $stmt_notif->bind_param("is", $student_user_id, $noti_msg);
+            $stmt_notif->execute();
+
+            $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> ส่งข้อความตอบกลับให้นักศึกษาเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+        } else {
+            $message = '<div class="alert alert-danger">เกิดข้อผิดพลาดในการบันทึกคำตอบกลับ</div>';
+        }
+    }
+}
+
 // 1. แอดมินลบทีมที่นักศึกษาสร้างขึ้น
 if (isset($_GET['delete_team_by_admin'])) {
     $del_team_id = intval($_GET['delete_team_by_admin']);
@@ -34,9 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
         $stmt_m->bind_param("siisss", $sport_name, $team1_id, $team2_id, $match_time, $location, $status);
         
         if ($stmt_m->execute()) {
-            
-            // --- 🌟 ระบบสร้างการแจ้งเตือน (Notifications) 🌟 ---
-            // 1. สร้างตารางแจ้งเตือนอัตโนมัติเผื่อไว้กรณีที่ฐานข้อมูลยังไม่มี
             $conn->query("CREATE TABLE IF NOT EXISTS notifications (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -45,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )");
 
-            // 2. ดึงชื่อทีมเพื่อนำไปใส่ในข้อความแจ้งเตือน
             $team_names = [];
             $q_teams = $conn->query("SELECT id, team_name FROM teams WHERE id IN ($team1_id, $team2_id)");
             while($rt = $q_teams->fetch_assoc()) {
@@ -54,13 +86,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
             $t1_name = $team_names[$team1_id] ?? 'ทีม A';
             $t2_name = $team_names[$team2_id] ?? 'ทีม B';
 
-            // 3. เตรียมข้อความแจ้งเตือน
             $msg_team1 = "📢 ตารางแข่งใหม่! ทีมของคุณ ({$t1_name}) มีคิวแข่งกีฬา {$sport_name} พบกับ {$t2_name} | 🕒 เวลา: {$match_time} | 📍 สถานที่: {$location}";
             $msg_team2 = "📢 ตารางแข่งใหม่! ทีมของคุณ ({$t2_name}) มีคิวแข่งกีฬา {$sport_name} พบกับ {$t1_name} | 🕒 เวลา: {$match_time} | 📍 สถานที่: {$location}";
 
             $notify_stmt = $conn->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)");
 
-            // 4. ส่งแจ้งเตือนให้นักศึกษาทุกคนในทีมที่ 1 (ส่งให้เฉพาะคนที่กด 'accepted' แล้ว)
             $m1 = $conn->query("SELECT user_id FROM team_members WHERE team_id = $team1_id AND status = 'accepted'");
             if($m1) {
                 while($row = $m1->fetch_assoc()) {
@@ -69,7 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
                 }
             }
 
-            // 5. ส่งแจ้งเตือนให้นักศึกษาทุกคนในทีมที่ 2 (ส่งให้เฉพาะคนที่กด 'accepted' แล้ว)
             $m2 = $conn->query("SELECT user_id FROM team_members WHERE team_id = $team2_id AND status = 'accepted'");
             if($m2) {
                 while($row = $m2->fetch_assoc()) {
@@ -77,7 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_match'])) {
                     $notify_stmt->execute();
                 }
             }
-            // --- 🌟 สิ้นสุดระบบแจ้งเตือน 🌟 ---
 
             $message = '<div class="alert alert-success alert-dismissible fade show"><i class="bi bi-check-circle-fill me-1"></i> สร้างตารางแข่งขันและแจ้งเตือนไปยังนักศึกษาในทีมทุกคนเรียบร้อยแล้ว! <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
         } else {
@@ -112,10 +140,8 @@ if (isset($_GET['delete_match'])) {
     exit();
 }
 
-// ดึงรายชื่อทีมทั้งหมดสำหรับดร็อปดาวน์ (เรียงตามชนิดกีฬา เพื่อให้ง่ายต่อการเลือก)
 $all_teams_list = $conn->query("SELECT id, team_name, team_color, sport_name FROM teams ORDER BY sport_name ASC, team_name ASC");
 
-// ดึงรายการแมตช์การแข่งขันทั้งหมด
 $matches_list = $conn->query("
     SELECT m.*, 
            t1.team_name AS team1_name, t1.team_color AS team1_color,
@@ -126,7 +152,6 @@ $matches_list = $conn->query("
     ORDER BY m.id DESC
 ");
 
-// ระบบค้นหาชื่อทีมกีฬา (เพิ่มการดึง sport_name และเรียงตามชนิดกีฬา)
 $search_team = trim($_GET['search_team'] ?? '');
 $team_query = "
     SELECT t.*, u.fullname AS leader_name, u.student_id AS leader_student_id,
@@ -141,7 +166,6 @@ if (!empty($search_team)) {
 $team_query .= " ORDER BY t.sport_name ASC, t.created_at DESC";
 $teams_list = $conn->query($team_query);
 
-// 5. ระบบกรองประวัติรายการแจ้งปัญหา / ข้อร้องเรียน (ค้นหาตามวันที่ และ ตามทีม)
 $filter_date = trim($_GET['filter_date'] ?? '');
 $filter_team = trim($_GET['filter_team'] ?? '');
 
@@ -194,7 +218,7 @@ $complaints = $conn->query($complaint_sql);
 
     <?= $message ?>
 
-    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน & ปุ่มลิงก์ไปหน้าชมตารางแข่ง -->
+    <!-- ⚽ ส่วนที่ 1: จัดการตารางแข่งขัน -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-success text-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fw-bold"><i class="bi bi-calendar-event-fill me-2"></i> จัดการตารางการแข่งขันกีฬา</h5>
@@ -255,7 +279,7 @@ $complaints = $conn->query($complaint_sql);
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีการจัดตารางแข่งขัน (กดปุ่ม "สร้างการแข่งขันใหม่" ด้านบน)</td></tr>
+                            <tr><td colspan="6" class="text-center py-4 text-muted">ยังไม่มีการจัดตารางแข่งขัน</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -307,7 +331,6 @@ $complaints = $conn->query($complaint_sql);
                                         <?php endif; ?>
                                     </td>
                                     <td><strong class="text-primary fs-6"><?= htmlspecialchars($tm['team_name']) ?></strong></td>
-                                    
                                     <td>
                                         <?php if (!empty($tm['sport_name'])): ?>
                                             <span class="badge bg-dark rounded-pill px-2 py-1"><?= htmlspecialchars($tm['sport_name']) ?></span>
@@ -315,7 +338,6 @@ $complaints = $conn->query($complaint_sql);
                                             <span class="badge bg-secondary">ไม่ระบุ</span>
                                         <?php endif; ?>
                                     </td>
-
                                     <td><span class="badge bg-secondary"><?= htmlspecialchars($tm['team_color']) ?></span></td>
                                     <td>
                                         <strong><?= htmlspecialchars($tm['leader_name']) ?></strong>
@@ -339,11 +361,11 @@ $complaints = $conn->query($complaint_sql);
         </div>
     </div>
 
-    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหา / ค้นหาตามวันที่และทีม -->
+    <!-- 🚨 ส่วนที่ 3: ประวัติและรายการแจ้งปัญหาพร้อมระบบตอบกลับ -->
     <div class="card shadow-sm border-0 mb-4">
         <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="card-title mb-0 fs-6">
-                <i class="bi bi-clock-history me-2"></i> ประวัติรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา
+                <i class="bi bi-clock-history me-2"></i> ประวัติรายการแจ้งปัญหา / ข้อร้องเรียนจากนักศึกษา (สามารถพิมพ์ตอบกลับได้)
             </h5>
             <span class="badge bg-light text-danger fw-bold"><?= $complaints ? $complaints->num_rows : 0 ?> รายการ</span>
         </div>
@@ -380,20 +402,48 @@ $complaints = $conn->query($complaint_sql);
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
-                        <tr><th>นักศึกษา</th><th>หัวข้อ</th><th>รายละเอียด / เกี่ยวกับทีม</th><th>วันที่และเวลาที่แจ้ง</th></tr>
+                        <tr>
+                            <th style="width: 20%;">นักศึกษา</th>
+                            <th style="width: 15%;">หัวข้อ</th>
+                            <th style="width: 30%;">รายละเอียด / เกี่ยวกับทีม</th>
+                            <th style="width: 35%;">การตอบกลับของแอดมิน</th>
+                        </tr>
                     </thead>
                     <tbody>
                         <?php if ($complaints && $complaints->num_rows > 0): ?>
                             <?php while ($cp = $complaints->fetch_assoc()): ?>
                                 <tr>
-                                    <td><strong><?= htmlspecialchars($cp['fullname']) ?></strong><br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small></td>
+                                    <td>
+                                        <strong><?= htmlspecialchars($cp['fullname']) ?></strong>
+                                        <br><small class="text-muted">รหัส: <?= htmlspecialchars($cp['student_id'] ?: '-') ?></small>
+                                        <br><small class="text-muted opacity-75"><i class="bi bi-clock"></i> <?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small>
+                                    </td>
                                     <td><span class="badge bg-warning text-dark"><?= htmlspecialchars($cp['subject']) ?></span></td>
-                                    <td><div class="p-2 bg-light rounded text-dark border"><?= nl2br(htmlspecialchars($cp['message'])) ?></div></td>
-                                    <td><small class="text-muted"><i class="bi bi-clock me-1"></i><?= date('d/m/Y H:i', strtotime($cp['created_at'])) ?> น.</small></td>
+                                    <td>
+                                        <div class="p-2 bg-light rounded text-dark border"><?= nl2br(htmlspecialchars($cp['message'])) ?></div>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($cp['admin_reply'])): ?>
+                                            <div class="p-2 bg-success bg-opacity-10 border border-success rounded text-success mb-2">
+                                                <small class="fw-bold d-block"><i class="bi bi-check-circle-fill me-1"></i> ตอบกลับแล้ว:</small>
+                                                <?= nl2br(htmlspecialchars($cp['admin_reply'])) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        
+                                        <!-- ฟอร์มพิมพ์ตอบกลับ -->
+                                        <form method="POST" class="mt-1">
+                                            <input type="hidden" name="complaint_id" value="<?= $cp['id'] ?>">
+                                            <input type="hidden" name="student_user_id" value="<?= $cp['user_id'] ?>">
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" name="admin_reply" class="form-control" placeholder="<?= !empty($cp['admin_reply']) ? 'พิมพ์แก้ไขคำตอบ...' : 'พิมพ์ข้อความตอบกลับ...' ?>" required>
+                                                <button type="submit" name="reply_complaint" class="btn btn-dark"><i class="bi bi-send-fill"></i> ส่ง</button>
+                                            </div>
+                                        </form>
+                                    </td>
                                 </tr>
                             <?php endwhile; ?>
                         <?php else: ?>
-                            <tr><td colspan="4" class="text-center py-4 text-muted">ไม่พบประวัติรายการแจ้งปัญหาตรงตามเงื่อนไขที่เลือก</td></tr>
+                            <tr><td colspan="4" class="text-center py-4 text-muted">ไม่พบประวัติรายการแจ้งปัญหา</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -492,7 +542,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function filterTeamsBySport() {
         const selectedSport = sportSelect.value;
-        
         if(selectedSport === "") {
             team1Select.disabled = true;
             team2Select.disabled = true;
