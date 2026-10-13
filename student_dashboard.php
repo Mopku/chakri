@@ -12,6 +12,38 @@ $user_id = $_SESSION['user_id'];
 $fullname = $_SESSION['fullname'] ?? 'นักศึกษา';
 $student_id = $_SESSION['student_id'] ?? '-';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_team'])) {
+    $team_name  = trim($_POST['team_name']);  // ชื่อทีม หรือ สีประจำทีม (เช่น สีฟ้า)
+    $sport_name = trim($_POST['sport_name']); // ชนิดกีฬา (เช่น E-Sports, บาสเกตบอล)
+    $user_id    = $_SESSION['user_id'];
+
+    if (!empty($team_name) && !empty($sport_name)) {
+        // 1. ตรวจสอบก่อนว่า มีทีมชื่อนี้ + ลงแข่งกีฬาชนิดนี้ ไปแล้วหรือยัง
+        $stmt_check = $conn->prepare("SELECT id FROM teams WHERE team_name = ? AND sport_name = ?");
+        $stmt_check->bind_param("ss", $team_name, $sport_name);
+        $stmt_check->execute();
+        $res_check = $stmt_check->get_result();
+
+        if ($res_check->num_rows > 0) {
+            // ❌ ถ้าซ้ำทั้ง ชื่อทีม/สี + ชนิดกีฬา เดียวกัน
+            $message = '<div class="alert alert-danger alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> ไม่สามารถสร้างได้! ทีม <strong>' . htmlspecialchars($team_name) . '</strong> ในประเภทกีฬา <strong>' . htmlspecialchars($sport_name) . '</strong> มีอยู่ในระบบแล้ว
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>';
+        } else {
+            // ✅ ถ้าชื่อทีม/สี ซ้ำ แต่เป็นชนิดกีฬาต่างกัน -> อนุญาตให้บันทึกสร้างทีมได้
+            $stmt_ins = $conn->prepare("INSERT INTO teams (team_name, sport_name, leader_id) VALUES (?, ?, ?)");
+            $stmt_ins->bind_param("ssi", $team_name, $sport_name, $user_id);
+            if ($stmt_ins->execute()) {
+                $message = '<div class="alert alert-success alert-dismissible fade show">
+                    <i class="bi bi-check-circle-fill me-1"></i> สร้างทีม ' . htmlspecialchars($team_name) . ' (' . htmlspecialchars($sport_name) . ') สำเร็จเรียบร้อยแล้ว!
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>';
+            }
+        }
+    }
+}
+
 // 1. ดึงข้อมูลคำเชิญเข้าทีมที่ยังไม่ได้ตอบรับ (Pending Invites Notification)
 $pending_invites = $conn->query("
     SELECT tm.id AS member_id, t.team_name, t.team_color, u.fullname AS leader_name
